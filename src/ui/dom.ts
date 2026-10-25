@@ -1,0 +1,66 @@
+/**
+ * DOM lookups.
+ *
+ * Gathered in one place so the markup contract is discoverable: this is the
+ * complete list of ids and classes `index.html` must provide.
+ */
+
+/** Everything the app needs from the page, already typed and non-nullable. */
+export interface AppElements {
+  readonly video: HTMLVideoElement;
+  readonly canvas: HTMLCanvasElement;
+  readonly ctx: CanvasRenderingContext2D;
+  readonly chordDisplay: HTMLElement;
+  readonly qualityDisplay: HTMLElement;
+  readonly filterDisplay: HTMLElement;
+  readonly volumeBars: readonly HTMLElement[];
+  readonly keySelect: HTMLSelectElement;
+  readonly toneSelect: HTMLSelectElement;
+  readonly guideToggle: HTMLButtonElement;
+  readonly gestureGuide: HTMLElement;
+  readonly helpButton: HTMLButtonElement;
+  readonly helpModal: HTMLElement;
+  readonly closeHelp: HTMLButtonElement;
+  readonly startOverlay: HTMLElement;
+}
+
+function requireElement<T extends Element>(selector: string): T {
+  const el = document.querySelector<T>(selector);
+  if (!el) {
+    throw new Error(`Gesture Synth: required element "${selector}" is missing from the page`);
+  }
+  return el;
+}
+
+/** Resolves every element the app depends on, failing loudly if the markup drifts. */
+export function getAppElements(): AppElements {
+  const canvas = requireElement<HTMLCanvasElement>("#overlay");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error('Gesture Synth: 2D canvas context unavailable on "#overlay"');
+  }
+
+  return {
+    video: requireElement<HTMLVideoElement>("#webcam"),
+    canvas,
+    ctx,
+    chordDisplay: requireElement("#chordDisplay"),
+    qualityDisplay: requireElement("#qualityDisplay"),
+    filterDisplay: requireElement("#distortionDisplay"),
+    volumeBars: Array.from(document.querySelectorAll<HTMLElement>(".vol-bar")),
+    keySelect: requireElement<HTMLSelectElement>("#keySelect"),
+    toneSelect: requireElement<HTMLSelectElement>("#toneSelect"),
+    guideToggle: requireElement<HTMLButtonElement>("#guideToggle"),
+    gestureGuide: requireElement("#gestureGuide"),
+    helpButton: requireElement<HTMLButtonElement>("#helpButton"),
+    helpModal: requireElement("#helpModal"),
+    closeHelp: requireElement<HTMLButtonElement>("#closeHelp"),
+    startOverlay: requireElement("#startOverlay"),
+  };
+}
+
+/** Matches the canvas backing store to the window, in device-independent pixels. */
+export function resizeCanvasToWindow(canvas: HTMLCanvasElement): void {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}

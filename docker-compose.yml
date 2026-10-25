@@ -1,0 +1,19 @@
+# Self-hosting Gesture Synth.
+#
+#   docker compose up -d
+#
+# Then open http://localhost:8080.
+#
+# Note: browsers only grant camera access over HTTPS or on localhost. To serve
+# this on a real hostname, terminate TLS in front of it (Caddy, Traefik, a
+# cloud load balancer, or nginx with certificates) and proxy to this service.
+
+services:
+  gesture-synth:
+    image: ghcr.io/therebelrobot/gesture-synth-plus:latest
+    # To build locally instead of pulling, uncomment these two lines:
+    # build: .
+    # image: gesture-synth:local
+    ports:
+      - "8080:80"
+    restart: unless-stopped

@@ -1,0 +1,11 @@
+# Everything the image does not need, kept out of the build context.
+.git
+.github
+.vercel
+node_modules
+dist
+coverage
+*.log
+.DS_Store
+.env
+.env.*
