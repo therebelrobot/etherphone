@@ -6,13 +6,13 @@
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
   "author": "therebelrobot",
-  "homepage": "https://github.com/therebelrobot/gesture-synth-plus#readme",
+  "homepage": "https://github.com/therebelrobot/etherphone#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/therebelrobot/gesture-synth-plus.git"
+    "url": "git+https://github.com/therebelrobot/etherphone.git"
   },
   "bugs": {
-    "url": "https://github.com/therebelrobot/gesture-synth-plus/issues"
+    "url": "https://github.com/therebelrobot/etherphone/issues"
   },
   "keywords": [
     "gesture-control",
