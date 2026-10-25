@@ -57,4 +57,22 @@ export const AUDIO = {
   gainSmoothingSeconds: 0.03,
   /** Master-gain ramp used by {@link SynthEngine.setVolume}, in seconds. */
   volumeRampSeconds: 0.05,
+
+  /**
+   * Harmonics a wavetable may use. 64 is well past the point where more
+   * harmonics stop changing the timbre, and it bounds the analysis of a loaded
+   * file to something that finishes in a frame.
+   */
+  wavetableMaxHarmonics: 64,
+  /** Samples the analyser reads per cycle; longer cycles are decimated to this. */
+  wavetableAnalysisSamples: 2048,
+
+  /** Ramp from silence when a sampled note starts, in seconds. */
+  samplerAttackSeconds: 0.008,
+  /** Ramp to silence when a sampled note stops, in seconds. */
+  samplerReleaseSeconds: 0.06,
+  /** Extra time before a stopped source is torn down, in seconds. */
+  samplerStopPaddingSeconds: 0.02,
+  /** Crossfade applied to a looping sample's seam, in milliseconds. */
+  samplerLoopFadeMilliseconds: 5,
 } as const;

@@ -21,7 +21,13 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       // The instrument's rules live in these modules; the rest is DOM and audio
       // glue that is exercised by playing the thing.
-      include: ["src/music/**/*.ts", "src/vision/gestures.ts"],
+      include: [
+        "src/music/**/*.ts",
+        "src/vision/gestures.ts",
+        "src/audio/voice.ts",
+        "src/audio/wavetable.ts",
+        "src/audio/sampler.ts",
+      ],
       exclude: ["src/**/*.test.ts"],
     },
   },

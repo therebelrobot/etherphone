@@ -1,7 +1,15 @@
 /**
- * The synth voice.
+ * The synth engine.
  *
- * Signal chain: oscillators -> waveshaper -> lowpass filter -> master gain.
+ * Signal chain: voice -> waveshaper -> lowpass filter -> master gain. The engine
+ * owns everything in that chain except the voice itself, plus the `AudioContext`
+ * everything is built against.
+ *
+ * What makes the noise is a separate concern, behind the `Voice` interface (see
+ * `./voice.ts`). `playNotes` forwards frequencies to whichever voice is active
+ * and never learns what kind it is, so swapping an oscillator for a wavetable or
+ * a sample playback engine is a registry lookup rather than a rewrite here.
+ *
  * The waveshaper is left with a null curve, which is a pass-through; it exists
  * as a hook for adding drive later without rewiring anything.
  *
@@ -9,16 +17,18 @@
  * refuse to start audio otherwise.
  */
 import { AUDIO } from "../config/constants";
-import type { Waveform } from "../types";
+import { frequenciesKey, getVoice } from "./voice";
+import type { Voice, VoiceDefinition } from "./voice";
 
 export class SynthEngine {
   private ctx: AudioContext | null = null;
   private filter: BiquadFilterNode | null = null;
   private waveShaper: WaveShaperNode | null = null;
   private masterGain: GainNode | null = null;
-  private oscillators: OscillatorNode[] = [];
+
+  private definition: VoiceDefinition | null = null;
+  private voice: Voice | null = null;
   private currentKey: string | null = null;
-  private waveform: Waveform = "triangle";
 
   /**
    * Creates the audio graph on first call. Safe to call repeatedly, and safe to
@@ -47,13 +57,47 @@ export class SynthEngine {
     this.waveShaper.connect(this.filter);
     this.filter.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
+
+    this.buildVoice();
   }
 
-  /** Selects the oscillator shape, restarting the current notes if any. */
-  setWaveform(waveform: Waveform): void {
-    this.waveform = waveform;
-    // Forces the next `playNotes` call to rebuild the oscillators.
-    this.currentKey = null;
+  /**
+   * The audio context, or `null` before {@link ensureContext} has run.
+   *
+   * Exposed so decoded assets can be prepared against the same context the
+   * instrument plays through.
+   */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  /** The registered id of the instrument currently loaded, if any. */
+  get instrumentId(): string | null {
+    return this.definition?.id ?? null;
+  }
+
+  /**
+   * Switches instruments.
+   *
+   * Unknown ids are ignored rather than thrown on: the picker is the only
+   * caller, and a stale id after the markup changes should not take the
+   * instrument down mid-session.
+   */
+  setInstrument(id: string): void {
+    const definition = getVoice(id);
+    if (!definition || definition.id === this.definition?.id) return;
+
+    this.definition = definition;
+    this.buildVoice();
+  }
+
+  /** Decodes an encoded audio file against the instrument's context. */
+  async decode(encoded: ArrayBuffer): Promise<AudioBuffer> {
+    if (!this.ctx) {
+      throw new Error("Gesture Synth: cannot decode audio before the context exists");
+    }
+
+    return this.ctx.decodeAudioData(encoded);
   }
 
   /** Smoothly sets the master gain, for use from the render loop. */
@@ -105,47 +149,43 @@ export class SynthEngine {
   /**
    * Replaces the currently sounding chord. Calling this every frame with the
    * same frequencies is a no-op, so it is safe to drive from the render loop.
+   *
+   * The chord is only remembered as settled once the voice confirms it is
+   * sounding, so a voice that is still loading its samples is retried next frame
+   * rather than being silently skipped.
    */
   playNotes(freqs: number[]): void {
-    if (!this.ctx || !this.waveShaper || freqs.length === 0) return;
+    if (!this.ctx || !this.voice || freqs.length === 0) return;
 
-    const key = freqs.map((freq) => freq.toFixed(1)).join(",");
+    const key = frequenciesKey(freqs);
     if (key === this.currentKey) return;
 
-    this.oscillators.forEach((osc) => {
-      try {
-        osc.stop();
-      } catch {
-        /* already stopped */
-      }
-    });
-
-    this.oscillators = freqs.map((freq) => {
-      const osc = this.ctx!.createOscillator();
-      osc.type = this.waveform;
-      osc.frequency.value = freq;
-      osc.connect(this.waveShaper!);
-      osc.start();
-      return osc;
-    });
-
-    this.currentKey = key;
+    if (this.voice.play(freqs)) {
+      this.currentKey = key;
+    }
   }
 
   /** Silences and tears down every voice. */
   stop(): void {
     this.setVolume(0);
-
-    this.oscillators.forEach((osc) => {
-      try {
-        osc.stop();
-        osc.disconnect();
-      } catch {
-        /* already stopped */
-      }
-    });
-
-    this.oscillators = [];
+    this.voice?.release();
     this.currentKey = null;
+  }
+
+  /**
+   * Swaps in the voice for the current definition.
+   *
+   * A no-op until the context exists, so the picker can be wired before the
+   * start gate is clicked; {@link ensureContext} calls this once it has.
+   */
+  private buildVoice(): void {
+    this.voice?.dispose();
+    this.voice = null;
+    this.currentKey = null;
+
+    if (!this.ctx || !this.waveShaper || !this.definition) return;
+
+    this.voice = this.definition.create();
+    this.voice.connect(this.ctx, this.waveShaper);
   }
 }

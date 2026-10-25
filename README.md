@@ -13,6 +13,8 @@ https://www.instagram.com/p/DbH1BACxNCG/
 - Right hand controls voicing and expression
 - Real-time hand tracking with MediaPipe
 - Web Audio API synthesis
+- A picker of instruments: oscillators, wavetables, and sampled sounds
+- Load your own wavetables and samples as new instruments
 
 ## Built With
 
@@ -42,6 +44,7 @@ Open the dev server URL, click the start overlay to grant audio, and allow camer
 | `npm run format`    | Prettier (and `format:check` for CI)  |
 | `npm test`          | Vitest, single run (and `test:watch`) |
 | `npm run coverage`  | Vitest with a V8 coverage report      |
+| `npm run samples`   | Regenerate the bundled sample WAVs    |
 
 ## Architecture
 
@@ -81,7 +84,23 @@ src/
                            and rides out brief dropouts.
 
   audio/
-    synth-engine.ts        Oscillators -> waveshaper -> lowpass filter -> gain.
+    synth-engine.ts        Voice -> waveshaper -> lowpass filter -> master gain.
+                           Owns the shared chain and the AudioContext; the notes
+                           themselves belong to whichever voice is loaded.
+    voice.ts               The Voice interface, the instrument registry, and the
+                           frequency key voices use to skip unchanged frames.
+    wavetable.ts           Harmonic spectra: the bundled tables and the analysis
+                           of a loaded cycle. Pure arithmetic.
+    sampler.ts             Playback-rate maths, the loop crossfade, and the list
+                           of bundled recordings. Pure arithmetic.
+    user-voices.ts         Turns a file you loaded into a registrable instrument.
+
+    voices/
+      bank.ts              Shared lifecycle for one-oscillator-per-note voices.
+      oscillator-voice.ts  Plain waveforms, one instrument per shape.
+      wavetable-voice.ts   A spectrum, played through a PeriodicWave.
+      sampler-voice.ts     One recording pitched across the keyboard.
+      index.ts             Registers the built-in instruments, in picker order.
 
   visuals/
     energy.ts              The jittering "energy ribbon" behind the chord readout.
@@ -117,11 +136,53 @@ src/
 
 The chord hand feeds `ChordStabilizer`, which requires a new chord to hold for 100ms before it is committed and tolerates a 50ms dropout. That is why the instrument does not flicker between chords when MediaPipe loses a hand for a frame.
 
+### Instruments
+
+The picker lists every instrument, and each one is a **voice**: a small module
+that turns a list of frequencies into sound. `SynthEngine` owns the shared chain —
+`voice → waveshaper → lowpass filter → master gain` — and the `AudioContext`. A
+voice owns only its own nodes.
+
+```
+SynthEngine.playNotes(freqs) ──▶ voice.play(freqs) ──▶ waveshaper ──▶ filter ──▶ gain
+```
+
+`playNotes` is the whole interface. It never learns what kind of voice it is
+talking to, so swapping an oscillator for a sampler is a registry lookup.
+
+Three kinds ship in the box:
+
+| Kind       | What it does                                                                      |
+| ---------- | --------------------------------------------------------------------------------- |
+| Oscillator | Plain waveforms: Warm, Bright, and Retro Synth.                                   |
+| Wavetable  | A single cycle written as harmonic coefficients, played through a `PeriodicWave`. |
+| Sampler    | One recording pitched across the keyboard, looped with a crossfaded seam.         |
+
+**Load Wavetable…** reads a `.wav` holding a single cycle and rebuilds it as a
+wavetable; **Load Sample…** reads any recording and pitches it across the
+keyboard. Both register a new instrument and switch to it, down the same path the
+built-in ones take — the picker cannot tell them apart.
+
+Two caveats about loaded files, both deliberate:
+
+- A wavetable file must be **one cycle**. A file holding many cycles analyses as a
+  smeared spectrum, not the timbre you recorded.
+- A sample's pitch is **assumed to be A2 (110 Hz)**, since nothing here detects
+  it. A recording at another pitch is heard transposed by the interval between the
+  two.
+
+The bundled samples are generated rather than sourced: `npm run samples` writes
+them into `public/samples/` from `scripts/generate-samples.mjs`, so the repository
+owns their licence and the recipe is reviewable.
+
 ### Adding to it
 
+- **A new instrument:** implement `Voice` — or reuse `OscillatorBank` — and register a `VoiceDefinition` in `src/audio/voices/index.ts`. It shows up in the picker; nothing else changes.
+- **A new wavetable:** add an entry to `WAVETABLE_PRESETS` in `src/audio/wavetable.ts`.
+- **A new sample:** drop a `.wav` into `public/samples/` and add it to `BUNDLED_SAMPLES` in `src/audio/sampler.ts`.
 - **A new voicing:** add one entry to `MAJOR_VOICINGS` or `MINOR_VOICINGS` in `src/music/voicings.ts`. The label and the notes come from the same object.
 - **A new key:** add its tonic frequency to the `<select id="keySelect">` in `index.html` and its scale to `MAJOR_SCALE` in `src/config/music.ts`.
-- **A new synth stage:** insert it in `SynthEngine.ensureContext()`; the graph order is documented there.
+- **A new synth stage:** insert it into the shared chain in `SynthEngine.ensureContext()`; the graph order is documented there.
 - **A new gesture:** add a pure function to `src/vision/gestures.ts` and cover it in `gestures.test.ts`.
 
 ## Self-Hosting with Docker

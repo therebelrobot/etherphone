@@ -38,6 +38,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
+    "samples": "node scripts/generate-samples.mjs",
     "docker:build": "docker build -t ghcr.io/therebelrobot/gesture-synth-plus:local .",
     "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/therebelrobot/gesture-synth-plus:latest --push .",
     "release:patch": "npm version patch -m \"chore: release v%s\" && git push && git push --tags",

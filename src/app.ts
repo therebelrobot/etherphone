@@ -10,10 +10,14 @@
  */
 import type { HandLandmarker, HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { SynthEngine } from "./audio/synth-engine";
+import { defineUserSample, defineUserWavetable } from "./audio/user-voices";
+import { listVoices, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
+import type { VoiceDefinition, VoiceKind } from "./audio/voice";
+import { DEFAULT_VOICE_ID } from "./audio/voices";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { ChordStabilizer } from "./music/stabilizer";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
-import type { ChordNumeral, ChordState, Hand, Handedness, KeyName, Waveform } from "./types";
+import type { ChordNumeral, ChordState, Hand, Handedness, KeyName } from "./types";
 import { getAppElements, resizeCanvasToWindow } from "./ui/dom";
 import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
@@ -38,11 +42,6 @@ function readKeyName(select: HTMLSelectElement): KeyName {
   return (select.selectedOptions[0]?.dataset.note ?? "A") as KeyName;
 }
 
-/** The waveform carried on the selected option's value. */
-function readWaveform(select: HTMLSelectElement): Waveform {
-  return select.value as Waveform;
-}
-
 export class GestureSynthApp {
   private readonly els: AppElements;
   private readonly synth: SynthEngine;
@@ -57,7 +56,6 @@ export class GestureSynthApp {
 
   private tonicFrequency: number;
   private keyName: KeyName;
-  private waveform: Waveform;
 
   constructor() {
     this.els = getAppElements();
@@ -75,7 +73,7 @@ export class GestureSynthApp {
 
     this.tonicFrequency = Number(this.els.keySelect.value);
     this.keyName = readKeyName(this.els.keySelect);
-    this.waveform = readWaveform(this.els.toneSelect);
+    this.renderInstruments(DEFAULT_VOICE_ID);
   }
 
   /**
@@ -88,7 +86,7 @@ export class GestureSynthApp {
     this.wireOverlays();
     this.bindControls();
     this.guide.render(this.keyName);
-    this.synth.setWaveform(this.waveform);
+    this.synth.setInstrument(this.els.instrumentSelect.value);
 
     await startCamera(this.els.video);
     resizeCanvasToWindow(this.els.canvas);
@@ -105,7 +103,7 @@ export class GestureSynthApp {
     new HelpModal(this.els.helpModal, this.els.helpButton, this.els.closeHelp);
   }
 
-  /** Wires the key and tone selectors. */
+  /** Wires the key, instrument, and instrument-loading controls. */
   private bindControls(): void {
     this.els.keySelect.addEventListener("change", () => {
       this.tonicFrequency = Number(this.els.keySelect.value);
@@ -113,10 +111,87 @@ export class GestureSynthApp {
       this.guide.render(this.keyName);
     });
 
-    this.els.toneSelect.addEventListener("change", () => {
-      this.waveform = readWaveform(this.els.toneSelect);
-      this.synth.setWaveform(this.waveform);
+    this.els.instrumentSelect.addEventListener("change", () => {
+      this.synth.setInstrument(this.els.instrumentSelect.value);
     });
+
+    // The file inputs are hidden; the buttons are what the player sees, and
+    // clicking one opens the picker for its input.
+    this.els.loadWavetable.addEventListener("click", () => this.els.wavetableFile.click());
+    this.els.loadSample.addEventListener("click", () => this.els.sampleFile.click());
+
+    this.els.wavetableFile.addEventListener("change", () => {
+      void this.loadInstrument(this.els.wavetableFile, "wavetable");
+    });
+
+    this.els.sampleFile.addEventListener("change", () => {
+      void this.loadInstrument(this.els.sampleFile, "sampler");
+    });
+  }
+
+  /** Reads a picked file as an instrument, then switches to it. */
+  private async loadInstrument(input: HTMLInputElement, kind: VoiceKind): Promise<void> {
+    const file = input.files?.[0];
+    // Clearing the input lets the same file be picked twice in a row.
+    input.value = "";
+    if (!file) return;
+
+    try {
+      const decoded = await this.decodeFile(file);
+      const definition =
+        kind === "wavetable"
+          ? defineUserWavetable(file.name, decoded.getChannelData(0))
+          : defineUserSample(file.name, decoded);
+
+      this.addInstrument(definition);
+    } catch (error) {
+      console.warn(`Gesture Synth: could not load "${file.name}" as a ${kind}`, error);
+    }
+  }
+
+  /** Decodes a file against the instrument's audio context, starting it if needed. */
+  private async decodeFile(file: File): Promise<AudioBuffer> {
+    // Picking a file is a user gesture, so this is a legal place to open audio.
+    this.synth.ensureContext();
+    return this.synth.decode(await file.arrayBuffer());
+  }
+
+  /** Registers a loaded instrument, lists it, and makes it active. */
+  private addInstrument(definition: VoiceDefinition): void {
+    registerVoice(definition);
+    this.renderInstruments(definition.id);
+    this.synth.setInstrument(definition.id);
+  }
+
+  /**
+   * Rebuilds the instrument picker from the registry, grouped by kind.
+   *
+   * Reading the registry rather than a hardcoded list is what makes a loaded
+   * instrument indistinguishable from a built-in: there is one source of truth
+   * for what can be played.
+   */
+  private renderInstruments(selectedId: string): void {
+    const select = this.els.instrumentSelect;
+    const groups = new Map<VoiceKind, HTMLOptGroupElement>();
+
+    select.replaceChildren();
+
+    for (const voice of listVoices()) {
+      let group = groups.get(voice.kind);
+      if (!group) {
+        group = document.createElement("optgroup");
+        group.label = VOICE_KIND_LABELS[voice.kind];
+        groups.set(voice.kind, group);
+        select.append(group);
+      }
+
+      const option = document.createElement("option");
+      option.value = voice.id;
+      option.textContent = voice.label;
+      group.append(option);
+    }
+
+    select.value = selectedId;
   }
 
   /**

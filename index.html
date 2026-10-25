@@ -35,11 +35,11 @@
         <option value="415.30" data-note="Ab">G#/Ab</option>
       </select>
 
-      <select id="toneSelect">
-        <option value="triangle" selected>Warm Synth</option>
-        <option value="sawtooth">Bright Synth</option>
-        <option value="square">Retro Synth</option>
-      </select>
+      <select id="instrumentSelect"></select>
+      <button id="loadWavetable" class="load-button">Load Wavetable…</button>
+      <button id="loadSample" class="load-button">Load Sample…</button>
+      <input id="wavetableFile" type="file" accept=".wav,audio/*" hidden />
+      <input id="sampleFile" type="file" accept="audio/*" hidden />
       <button id="guideToggle">Open Guide</button>
       <div id="gestureGuide" class="hidden"></div>
       <div id="qualityDisplay">--</div>
@@ -56,6 +56,14 @@
             Gesture Synth is an interactive musical instrument created by
             <a href="https://indecisiveeric.com"> Eric Wei</a>. Use your hands to create chords,
             melodies, and sounds in real-time!
+          </p>
+
+          <h3>Instruments</h3>
+          <p>
+            The picker holds every instrument: the synths, a set of wavetables, and two sampled
+            instruments. <b>Load Wavetable…</b> reads a single-cycle <code>.wav</code> and rebuilds
+            it as a playable table; <b>Load Sample…</b> reads any recording and pitches it across
+            the keyboard. Both add the file to the picker and switch to it.
           </p>
 
           <h3>Left Hand</h3>
