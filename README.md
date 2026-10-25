@@ -1,20 +1,21 @@
-# Gesture Synth
+# Etherphone
 
-A camera-based musical instrument that lets you control chords, tone, and expression using hand gestures.
+A gesture-controlled live electronic instrument. Your hands play it: they choose
+the chord, the voicing, and the expression. There is no keyboard, no MIDI
+controller, and nothing to touch — a webcam and two hands.
 
-## Demo
-
-🎥 Watch the Gesture Synth tutorial on Instagram:
-https://www.instagram.com/p/DbH1BACxNCG/
+Etherphone is built on [Gesture Synth](https://github.com/ericwei97-cloud/gesture-synth)
+by [Eric Wei](https://indecisiveeric.com), a camera-based instrument that turns
+hand gestures into chords. The gesture language is his; the instrument layer, the
+voices, and everything since are this project's. See [Credits](#credits).
 
 ## Features
 
-- Left hand controls chord selection
-- Right hand controls voicing and expression
-- Real-time hand tracking with MediaPipe
-- Web Audio API synthesis
+- Left hand chooses the chord and, by tilt, whether it is major or minor
+- Right hand chooses the voicing and the expression
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
+- Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
 
 ## Built With
 
@@ -190,7 +191,7 @@ owns their licence and the recipe is reviewable.
 The repo publishes a multi-arch (amd64 + arm64) image to GitHub Container Registry:
 
 ```bash
-docker run -p 8080:80 ghcr.io/therebelrobot/gesture-synth-plus:latest
+docker run -p 8080:80 ghcr.io/therebelrobot/etherphone:latest
 ```
 
 Or with Compose:
@@ -214,8 +215,8 @@ npm run docker:build
 Verify a published image:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/therebelrobot/gesture-synth-plus:latest
-gh attestation verify oci://ghcr.io/therebelrobot/gesture-synth-plus:latest --owner therebelrobot
+docker buildx imagetools inspect ghcr.io/therebelrobot/etherphone:latest
+gh attestation verify oci://ghcr.io/therebelrobot/etherphone:latest --owner therebelrobot
 ```
 
 ## Deployment
@@ -236,11 +237,25 @@ To cut a release (which tags and triggers the multi-arch image build):
 npm run release:patch   # or release:minor / release:major
 ```
 
+## Credits
+
+**Gesture Synth** — the original instrument, its gesture language, and the
+musical design this project inherits — is by
+[Eric Wei](https://indecisiveeric.com):
+
+- https://github.com/ericwei97-cloud/gesture-synth
+- 🎥 The Gesture Synth tutorial on Instagram: https://www.instagram.com/p/DbH1BACxNCG/
+
+Etherphone's own additions are the instrument layer and its registry, the picker,
+the wavetable and sampler voices, the runtime loading of your own files, and the
+bundled sample generator.
+
 ## License
 
-Gesture Synth is free to use, modify, and share for educational and non-commercial purposes.
-If you build upon this project, please credit the original creator.
+Etherphone is a derivative work of Gesture Synth, so it carries the same terms:
+free to use, modify, and share for personal, educational, and non-commercial
+purposes, with credit to the original. It is not for commercial use — selling it,
+or shipping substantial portions of it in a paid product, needs permission from
+the author of Gesture Synth.
 
 See [LICENSE](./LICENSE) for the full text.
-
-Gesture Synth was created by [Eric Wei](https://indecisiveeric.com).

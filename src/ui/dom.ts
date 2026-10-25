@@ -28,10 +28,12 @@ export interface AppElements {
   readonly startOverlay: HTMLElement;
 }
 
+import { PROJECT_NAME } from "../config/constants";
+
 function requireElement<T extends Element>(selector: string): T {
   const el = document.querySelector<T>(selector);
   if (!el) {
-    throw new Error(`Gesture Synth: required element "${selector}" is missing from the page`);
+    throw new Error(`${PROJECT_NAME}: required element "${selector}" is missing from the page`);
   }
   return el;
 }
@@ -41,7 +43,7 @@ export function getAppElements(): AppElements {
   const canvas = requireElement<HTMLCanvasElement>("#overlay");
   const ctx = canvas.getContext("2d");
   if (!ctx) {
-    throw new Error('Gesture Synth: 2D canvas context unavailable on "#overlay"');
+    throw new Error(`${PROJECT_NAME}: 2D canvas context unavailable on "#overlay"`);
   }
 
   return {

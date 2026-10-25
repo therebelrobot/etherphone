@@ -14,6 +14,7 @@
  * This module is pure: no Web Audio objects are constructed here, only
  * described. That keeps the registry testable without a browser.
  */
+import { PROJECT_NAME } from "../config/constants";
 
 /** Coarse grouping, used to sort and label the instrument picker. */
 export type VoiceKind = "oscillator" | "wavetable" | "sampler";
@@ -79,11 +80,11 @@ const registry = new Map<string, VoiceDefinition>();
  */
 export function registerVoice(definition: VoiceDefinition): void {
   if (definition.id.length === 0) {
-    throw new Error("Gesture Synth: a voice definition needs a non-empty id");
+    throw new Error(`${PROJECT_NAME}: a voice definition needs a non-empty id`);
   }
 
   if (registry.has(definition.id)) {
-    throw new Error(`Gesture Synth: a voice with id "${definition.id}" is already registered`);
+    throw new Error(`${PROJECT_NAME}: a voice with id "${definition.id}" is already registered`);
   }
 
   registry.set(definition.id, definition);

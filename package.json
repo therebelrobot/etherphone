@@ -1,11 +1,11 @@
 {
-  "name": "gesture-synth",
+  "name": "etherphone",
   "version": "1.0.0",
   "private": true,
-  "description": "A camera-based musical instrument that turns hand gestures into chords, tone, and expression.",
+  "description": "A gesture-controlled live electronic instrument. Built on Gesture Synth by Eric Wei.",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
-  "author": "Eric Wei",
+  "author": "therebelrobot",
   "homepage": "https://github.com/therebelrobot/gesture-synth-plus#readme",
   "repository": {
     "type": "git",
@@ -15,12 +15,16 @@
     "url": "https://github.com/therebelrobot/gesture-synth-plus/issues"
   },
   "keywords": [
-    "webcam",
+    "gesture-control",
     "hand-tracking",
+    "webcam",
     "mediapipe",
     "web-audio",
     "synthesizer",
-    "gesture-control",
+    "wavetable",
+    "sampler",
+    "live-performance",
+    "instrument",
     "typescript"
   ],
   "engines": {
@@ -39,8 +43,8 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "samples": "node scripts/generate-samples.mjs",
-    "docker:build": "docker build -t ghcr.io/therebelrobot/gesture-synth-plus:local .",
-    "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/therebelrobot/gesture-synth-plus:latest --push .",
+    "docker:build": "docker build -t ghcr.io/therebelrobot/etherphone:local .",
+    "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/therebelrobot/etherphone:latest --push .",
     "release:patch": "npm version patch -m \"chore: release v%s\" && git push && git push --tags",
     "release:minor": "npm version minor -m \"chore: release v%s\" && git push && git push --tags",
     "release:major": "npm version major -m \"chore: release v%s\" && git push && git push --tags"

@@ -5,9 +5,16 @@
  * than buried inside the render loop.
  */
 
+/**
+ * The instrument's name, in one place.
+ *
+ * It appears in readouts and in every user-facing error message, so renaming the
+ * project is a one-line change rather than a search across the source.
+ */
+export const PROJECT_NAME = "Etherphone";
+
 /** How long a new chord must hold before it becomes the committed chord (ms). */
 export const CHORD_HOLD_TIME_MS = 100;
-
 /** How long a dropped hand may flicker to nothing before that counts as a change (ms). */
 export const VIBE_NULL_WINDOW_MS = 50;
 

@@ -1,5 +1,5 @@
 /**
- * Shared vocabulary for Gesture Synth.
+ * Shared vocabulary for Etherphone.
  *
  * These types describe how the modules talk to one another: hands arrive as
  * MediaPipe landmarks, get reduced to a musical *intent* (a chord plus a

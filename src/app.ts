@@ -1,5 +1,5 @@
 /**
- * Gesture Synth application.
+ * Etherphone application.
  *
  * This is the only module that knows about every layer at once. It owns the
  * per-frame state and drives the pipeline:
@@ -14,6 +14,7 @@ import { defineUserSample, defineUserWavetable } from "./audio/user-voices";
 import { listVoices, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
 import type { VoiceDefinition, VoiceKind } from "./audio/voice";
 import { DEFAULT_VOICE_ID } from "./audio/voices";
+import { PROJECT_NAME } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { ChordStabilizer } from "./music/stabilizer";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
@@ -145,7 +146,7 @@ export class GestureSynthApp {
 
       this.addInstrument(definition);
     } catch (error) {
-      console.warn(`Gesture Synth: could not load "${file.name}" as a ${kind}`, error);
+      console.warn(`${PROJECT_NAME}: could not load "${file.name}" as a ${kind}`, error);
     }
   }
 

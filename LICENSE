@@ -1,6 +1,12 @@
-Gesture Synth License
+Etherphone License
 
-Copyright (c) 2026 Eric Wei
+Etherphone is a derivative work of Gesture Synth by Eric Wei
+(https://github.com/ericwei97-cloud/gesture-synth), which is licensed for
+personal, educational, and non-commercial use. Etherphone carries those same
+terms, and credits the original below.
+
+Copyright (c) 2026 Eric Wei — original Gesture Synth
+Copyright (c) 2026 therebelrobot — Etherphone and its additions
 
 Permission is granted to use, copy, modify, and share this software for personal,
 educational, and non-commercial purposes.

@@ -11,7 +11,7 @@
  * way the buffer is prepared the same way: looped recordings get a crossfade so
  * the loop point does not tick.
  */
-import { AUDIO } from "../../config/constants";
+import { AUDIO, PROJECT_NAME } from "../../config/constants";
 import { crossfadeForLoop, DEFAULT_SAMPLE_ROOT_HZ, playbackRateFor } from "../sampler";
 import { frequenciesKey } from "../voice";
 import type { Voice } from "../voice";
@@ -122,7 +122,7 @@ export class SamplerVoice implements Voice {
 
       this.prepareBuffer(decoded);
     } catch (error) {
-      console.warn(`Gesture Synth: could not load sample "${url}"`, error);
+      console.warn(`${PROJECT_NAME}: could not load sample "${url}"`, error);
     }
   }
 

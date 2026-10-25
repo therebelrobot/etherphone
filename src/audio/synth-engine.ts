@@ -16,7 +16,7 @@
  * The context is only created in response to a user gesture, because browsers
  * refuse to start audio otherwise.
  */
-import { AUDIO } from "../config/constants";
+import { AUDIO, PROJECT_NAME } from "../config/constants";
 import { frequenciesKey, getVoice } from "./voice";
 import type { Voice, VoiceDefinition } from "./voice";
 
@@ -94,7 +94,7 @@ export class SynthEngine {
   /** Decodes an encoded audio file against the instrument's context. */
   async decode(encoded: ArrayBuffer): Promise<AudioBuffer> {
     if (!this.ctx) {
-      throw new Error("Gesture Synth: cannot decode audio before the context exists");
+      throw new Error(`${PROJECT_NAME}: cannot decode audio before the context exists`);
     }
 
     return this.ctx.decodeAudioData(encoded);

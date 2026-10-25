@@ -1,4 +1,4 @@
-# Self-hosting Gesture Synth.
+# Self-hosting Etherphone.
 #
 #   docker compose up -d
 #
@@ -9,11 +9,11 @@
 # cloud load balancer, or nginx with certificates) and proxy to this service.
 
 services:
-  gesture-synth:
-    image: ghcr.io/therebelrobot/gesture-synth-plus:latest
+  etherphone:
+    image: ghcr.io/therebelrobot/etherphone:latest
     # To build locally instead of pulling, uncomment these two lines:
     # build: .
-    # image: gesture-synth:local
+    # image: etherphone:local
     ports:
       - "8080:80"
     restart: unless-stopped

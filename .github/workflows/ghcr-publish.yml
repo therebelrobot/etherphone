@@ -31,7 +31,7 @@ jobs:
       matrix:
         include:
           # One entry per image. Image names must be lowercase.
-          - name: gesture-synth-plus
+          - name: etherphone
             context: .
             dockerfile: ./Dockerfile
     steps:
