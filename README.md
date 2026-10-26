@@ -9,6 +9,14 @@ by [Eric Wei](https://indecisiveeric.com), a camera-based instrument that turns
 hand gestures into chords. The gesture language is his; the instrument layer, the
 voices, and everything since are this project's. See [Credits](#credits).
 
+## Play it
+
+**https://github.aster.hn/etherphone/**
+
+Allow camera access when prompted, then hold up a hand. Camera access requires a
+secure context, so use that `https://` URL — the plain-HTTP form of the same host
+will load the app but cannot reach the camera.
+
 ## Features
 
 - Left hand chooses the chord and, by tilt, whether it is major or minor
