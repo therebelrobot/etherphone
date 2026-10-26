@@ -1,13 +1,68 @@
 # Etherphone
 
-A gesture-controlled live electronic instrument. Your hands play it: they choose
-the chord, the voicing, and the expression. There is no keyboard, no MIDI
-controller, and nothing to touch — a webcam and two hands.
+**A contactless instrument you play in the air — built to be performed live and recorded in the same page.**
+
+One hand shapes the harmony. The other shapes the expression. There is no keyboard,
+no MIDI controller, no DAW, and nothing to touch — a webcam, two hands, and a
+browser are the whole rig.
 
 Etherphone is built on [Gesture Synth](https://github.com/ericwei97-cloud/gesture-synth)
-by [Eric Wei](https://indecisiveeric.com), a camera-based instrument that turns
-hand gestures into chords. The gesture language is his; the instrument layer, the
-voices, and everything since are this project's. See [Credits](#credits).
+by [Eric Wei](https://indecisiveeric.com), a camera-based instrument that turns hand
+gestures into chords. The gesture language is his; the instrument layer, the voices,
+and everything since are this project's. See [Credits](#credits).
+
+## The idea
+
+Etherphone sits between two instruments that solved different halves of the same
+problem.
+
+**From the theremin, it takes contactless, continuous expression.** Pitch and volume
+are positions in space, not keys under fingers, so a phrase is a movement rather than
+a sequence of presses. Nothing is struck; everything is shaped. That is what makes
+the instrument feel like an instrument and not a remote control.
+
+**From the [MiMu gloves](https://mimugloves.com/), it takes a vocabulary carried by
+the hand itself.** A hand shape can mean a chord, a voicing, a mode, a transport
+command. A performer should be able to run a whole set — change key, switch voice,
+arm a loop — without walking back to a laptop.
+
+**The third part is that it should be self-contained.** Capture, synthesis, looping,
+and the take you post all belong in the page. No account, no upload, no second
+application, no cable. The only permissions it asks for are the camera — and, once
+voice lands, the microphone — and the audio never leaves the machine.
+
+The long-term shape is a performance machine: one person, two hands, a full piece —
+played live, looped, layered, and recorded as a file worth posting.
+
+## Where it is now
+
+Today Etherphone is a **chorder**. A chord exists while a hand holds a shape and
+stops when the hand drops. The picker has oscillators, wavetables, and samplers, and
+you can load your own. That is a real instrument, but it is not yet a performance:
+there is no time, no memory, no second voice, no rhythm, and no way to reach a setting
+without the mouse.
+
+The gap is mapped, not guessed. The open RFCs describe six changes to the
+instrument, plus one to what happens after it is played:
+
+```
+Wave 1  Control plane   hands drive the interface          RFCs #4, #8
+Wave 2  The spine       musical modes + a shared clock     RFCs #7, #2
+Wave 3  Layers          voice, tuning, percussion          RFCs #9, #11, #10
+        Capture         a take you can actually post       RFC #12
+```
+
+| Wave                  | What it unlocks                                                                                        | Why it is in this order                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 — Control plane** | Gesture-driven menu navigation (#4) and remappable gesture maps (#8)                                   | Every later feature adds a control. If the only way to reach one is a `<select>`, the stop-and-click problem gets worse with each wave.                       |
+| **2 — The spine**     | A monophonic voice for melody, lead, and bass (#7), and the recorder/looper with a real transport (#2) | The looper owns tempo and time. The mono voice forces the app to stop assuming that "musical intent" means "a chord". Everything after this is built on both. |
+| **3 — Layers**        | Microphone looping (#9), tuned voice loops (#11), and percussion (#10)                                 | These are layers on the spine: same clock, same loop windows, same gesture control. Designing them against three separate clocks would be a mistake.          |
+| **Capture**           | Render a performance — audio, and ideally the video overlay — to a file ready to post                  | The thing that makes it "perform into recording". It taps the master bus, so the loops, voice, and drums of the waves above arrive in the same mix for free.  |
+
+The umbrella issue is [#1, "Etherphone as a performance machine"](https://github.com/therebelrobot/etherphone/issues/1).
+The RFCs are deliberately written as _requests for comments_ — a problem, a direction,
+and the questions worth arguing about — not as implementation-ready specs. Comments
+and disagreements are wanted.
 
 ## Play it
 
@@ -19,11 +74,25 @@ will load the app but cannot reach the camera.
 
 ## Features
 
+**Today**
+
 - Left hand chooses the chord and, by tilt, whether it is major or minor
 - Right hand chooses the voicing and the expression
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
+- Runs entirely in the browser; a static build is the whole application
+
+**Next, in the order the RFCs argue for**
+
+- Change key, instrument, and transport by gesture, with dwell instead of click
+- Remap the gesture vocabulary, and choose chord sets smaller than the full seven
+- A mono voice for leads and basslines
+- Record musical intent and loop it against a real tempo
+- Capture the microphone and loop voice as a layer
+- Tune a captured voice loop to the key without changing its timing
+- Percussion: live hits, a step grid, and possibly a small pattern notation
+- Record a finished performance — audio, and ideally the video overlay — to a file ready to post
 
 ## Built With
 
@@ -39,7 +108,9 @@ npm install
 npm run dev
 ```
 
-Open the dev server URL, click the start overlay to grant audio, and allow camera access. The camera only works on `localhost` or over HTTPS — browsers block `getUserMedia` on plain HTTP.
+Open the dev server URL, click the start overlay to grant audio, and allow camera
+access. The camera only works on `localhost` or over HTTPS — browsers block
+`getUserMedia` on plain HTTP.
 
 ### Scripts
 
@@ -57,7 +128,8 @@ Open the dev server URL, click the start overlay to grant audio, and allow camer
 
 ## Architecture
 
-The instrument is a pipeline. Each stage is its own module, and only `src/app.ts` knows about all of them at once:
+The instrument is a pipeline. Each stage is its own module, and only `src/app.ts`
+knows about all of them at once:
 
 ```
 camera ──▶ landmarks ──▶ musical intent ──▶ stabiliser ──▶ audio
@@ -123,6 +195,12 @@ src/
     start-overlay.ts       The click-to-enable-audio gate.
 ```
 
+The RFCs each name the modules they would add — `src/audio/transport.ts` for the
+shared clock, `src/music/recorder.ts` and `looper.ts` for takes, a mic voice in
+`src/audio/voices/`, and so on. The point of the current layout is that those are
+additions, not rewrites: the `Voice` seam already makes a sampler a registry entry,
+and it will make a mic loop one too.
+
 ### How the gestures map to music
 
 **Left hand — chord**
@@ -143,7 +221,15 @@ src/
 | Tilt inward / outward | Close the filter / open it                      |
 | Height                | Louder the higher the hand                      |
 
-The chord hand feeds `ChordStabilizer`, which requires a new chord to hold for 100ms before it is committed and tolerates a 50ms dropout. That is why the instrument does not flicker between chords when MediaPipe loses a hand for a frame.
+The chord hand feeds `ChordStabilizer`, which requires a new chord to hold for 100ms
+before it is committed and tolerates a 50ms dropout. That is why the instrument does
+not flicker between chords when MediaPipe loses a hand for a frame.
+
+This vocabulary is inherited from Gesture Synth, and it is a _diatonic seventh-chord_
+vocabulary: it assumes seven degrees and a hand that can make a rock sign. [RFC #8](https://github.com/therebelrobot/etherphone/issues/8)
+proposes making it data, with presets — so a player can work in a pentatonic or modal
+idiom, choose only the three chords they want, or reach them with shapes their hands
+actually make.
 
 ### Instruments
 
@@ -178,11 +264,15 @@ Two caveats about loaded files, both deliberate:
   smeared spectrum, not the timbre you recorded.
 - A sample's pitch is **assumed to be A2 (110 Hz)**, since nothing here detects
   it. A recording at another pitch is heard transposed by the interval between the
-  two.
+  two. [RFC #11](https://github.com/therebelrobot/etherphone/issues/11) is the answer
+  to this for captured voice: detect the fundamental, then transpose without
+  changing duration.
 
 The bundled samples are generated rather than sourced: `npm run samples` writes
 them into `public/samples/` from `scripts/generate-samples.mjs`, so the repository
-owns their licence and the recipe is reviewable.
+owns their licence and the recipe is reviewable. The starter drum kit proposed by
+[RFC #10](https://github.com/therebelrobot/etherphone/issues/10) should be generated
+the same way.
 
 ### Adding to it
 
@@ -247,9 +337,8 @@ npm run release:patch   # or release:minor / release:major
 
 ## Credits
 
-**Gesture Synth** — the original instrument, its gesture language, and the
-musical design this project inherits — is by
-[Eric Wei](https://indecisiveeric.com):
+**Gesture Synth** — the original instrument, its gesture language, and the musical
+design this project inherits — is by [Eric Wei](https://indecisiveeric.com):
 
 - https://github.com/ericwei97-cloud/gesture-synth
 - 🎥 The Gesture Synth tutorial on Instagram: https://www.instagram.com/p/DbH1BACxNCG/
@@ -258,12 +347,65 @@ Etherphone's own additions are the instrument layer and its registry, the picker
 the wavetable and sampler voices, the runtime loading of your own files, and the
 bundled sample generator.
 
+**Design lineage, not code lineage.** The _theremin_ (Léon Theremin, 1920) is the
+reason this instrument is played without contact, and the _MiMu Gloves_ (Imogen Heap
+and team, from 2010) are the reason it treats a hand shape as a word. Neither
+project's code, hardware, firmware, or assets are used here. See the next section.
+
+## Naming, provenance, and legal
+
+Etherphone is a name with a history. **"Etherphone"** — alongside _ætherphone_ and
+_thereminophone_ — was one of the names used for Léon Theremin's instrument in the
+1920s before "theremin" settled. The name is used here as a deliberate link to that
+lineage, not as a claim on anyone else's mark.
+
+**The theremin is public domain.** Theremin's core US patent, US 1,661,058, _Method
+of and apparatus for the generation of sounds_, was filed in 1925, granted in 1928,
+and expired in 1945, so the design has been free to build for eight decades. No
+patent or trademark litigation over the instrument turned up in the research for
+this project, and "theremin" is used generically by dozens of independent makers.
+Brand names such as Moog's _Etherwave_, _Thereminvox_, and RCA's marks belong to
+their owners and are not used here. Etherphone is also not a theremin electrically:
+it tracks hands with a camera and synthesises with the Web Audio API, rather than
+sensing capacitance in an antenna circuit.
+
+**MiMu is an independent company, and this project is not affiliated with it.**
+Mi.Mu Gloves are a commercial wearable instrument made by Mi.Mu Gloves Limited (UK
+company 10983859), conceived by Imogen Heap and developed from 2010. Etherphone is
+not affiliated with, endorsed by, sponsored by, or compatible with MiMu, and it does
+not copy their gloves, sensors, firmware, software, or trade dress — it is a
+camera-based instrument with no wearable hardware. _MiMu_, _Mi.Mu_, _Glover_, and
+_Gliss_ are their marks; they appear here only as a descriptive reference to the
+design lineage, and no product name, package name, domain, logo, or module name in
+this repository uses them. No MiMu-assigned patents surfaced in the patent searches
+run for this project, and no litigation involving them surfaced in the news
+searches; that is an absence of evidence, not a clearance opinion.
+
+**The binding licence is Gesture Synth's.** Etherphone is a derivative work of
+Gesture Synth and carries its non-commercial terms. That is the licence most likely
+to constrain what you do with this code — not the theremin, and not MiMu. Playing
+your own music on Etherphone and posting the recording is fine. Selling the
+application, running it as a paid service, or shipping it inside a paid product needs
+permission from Eric Wei, the author of Gesture Synth.
+
+**Non-commercial, permanently.** Etherphone is not a product and will not become
+one. It will not be sold, ad-supported, paywalled, or offered as a paid hosting
+tier, and no commercial licence will be sought for it. That is a project commitment
+on top of the inherited licence, not a stage it is passing through. Forks are
+welcome under the same terms.
+
+None of the above is legal advice; read [LICENSE](./LICENSE) yourself. Because the
+project is non-commercial by design, the trademark position is the ordinary one for
+a free project: describe the lineage, never imply endorsement, and keep other
+people's marks out of this project's name, logo, domain, and package names.
+
 ## License
 
 Etherphone is a derivative work of Gesture Synth, so it carries the same terms:
 free to use, modify, and share for personal, educational, and non-commercial
 purposes, with credit to the original. It is not for commercial use — selling it,
 or shipping substantial portions of it in a paid product, needs permission from
-the author of Gesture Synth.
+the author of Gesture Synth. Etherphone is, and will remain, a non-commercial
+project.
 
 See [LICENSE](./LICENSE) for the full text.
