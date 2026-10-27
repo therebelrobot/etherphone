@@ -27,6 +27,7 @@ export interface AppElements {
   readonly gestureGuide: HTMLElement;
   readonly tempoSelect: HTMLSelectElement;
   readonly barsSelect: HTMLSelectElement;
+  readonly transportControls: HTMLElement;
   readonly recordButton: HTMLButtonElement;
   readonly playButton: HTMLButtonElement;
   readonly stopButton: HTMLButtonElement;
@@ -79,6 +80,7 @@ export function getAppElements(): AppElements {
     gestureGuide: requireElement("#gestureGuide"),
     tempoSelect: requireElement<HTMLSelectElement>("#tempoSelect"),
     barsSelect: requireElement<HTMLSelectElement>("#barsSelect"),
+    transportControls: requireElement("#transportControls"),
     recordButton: requireElement<HTMLButtonElement>("#recordButton"),
     playButton: requireElement<HTMLButtonElement>("#playButton"),
     stopButton: requireElement<HTMLButtonElement>("#stopButton"),

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL } from "../config/constants";
 import type { CanvasPoint } from "../types";
-import { isMenuTopic, isModeSwitch, MENU_TOPICS, MenuController } from "./menu-controller";
+import {
+  isMenuTopic,
+  isModeSwitch,
+  MENU_TOPICS,
+  MenuController,
+  menuTopicsFor,
+} from "./menu-controller";
 
 const VOCABULARY = [
   { id: "classic", label: "Classic" },
@@ -484,6 +490,16 @@ describe("menu topic and mode ids", () => {
     expect(isModeSwitch("chord")).toBe(true);
     expect(isModeSwitch("mono")).toBe(true);
     expect(isModeSwitch("triad")).toBe(false);
+  });
+
+  it("drops the looper's own menus when looping is turned off", () => {
+    expect(menuTopicsFor(true)).toBe(MENU_TOPICS);
+    expect(menuTopicsFor(false).map((topic) => topic.id)).toEqual([
+      "vocabulary",
+      "key",
+      "instrument",
+      "settings",
+    ]);
   });
 
   it("offers the vocabulary, key, instrument, layers, transport, and settings menus", () => {

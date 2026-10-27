@@ -32,10 +32,20 @@ export class HelpModal {
     });
   }
 
-  /** Re-renders for the mode, key, and map in play. */
-  render(mode: InstrumentMode, keyName: KeyName, map: GestureMap): void {
+  /**
+   * Re-renders for the mode, key, and map in play.
+   *
+   * `looping` hides the looper's half of the guide. A guide that describes an
+   * instrument you have turned off is worse than no guide, which is the same
+   * reason the mode filtering exists.
+   */
+  render(mode: InstrumentMode, keyName: KeyName, map: GestureMap, looping = true): void {
     for (const element of this.modal.querySelectorAll<HTMLElement>("[data-mode]")) {
       element.classList.toggle("hidden", element.dataset.mode !== mode);
+    }
+
+    for (const element of this.modal.querySelectorAll<HTMLElement>("[data-feature]")) {
+      element.classList.toggle("hidden", element.dataset.feature === "looping" ? !looping : false);
     }
 
     this.chordRows.innerHTML = chordGuideRows(keyName, map)

@@ -172,6 +172,16 @@ export const TEMPO_STORAGE_KEY = "etherphone.tempo";
 export const BARS_STORAGE_KEY = "etherphone.bars";
 
 /**
+ * Where the looper's on/off setting is remembered.
+ *
+ * Looping is an advanced feature — it asks a player to think in layers and bars
+ * — and the instrument plays perfectly well without it. So it can be turned off
+ * *completely*: no transport, no layers, no fist gestures, no lanes. That is a
+ * different thing from a hidden panel, and the difference is the point.
+ */
+export const LOOPING_STORAGE_KEY = "etherphone.looping";
+
+/**
  * The transport, by fist.
  *
  * The menu is deliberate — open it, pick a menu, dwell on an option — which is

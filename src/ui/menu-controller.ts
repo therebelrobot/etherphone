@@ -94,6 +94,22 @@ export const MENU_TOPICS: readonly MenuOption[] = [
   { id: "settings", label: "Settings" },
 ];
 
+/** The menus that only mean something while the looper is on. */
+const LOOPER_TOPICS = new Set<string>(["transport", "layers"]);
+
+/**
+ * The menus in play.
+ *
+ * With looping turned off the transport and the layers are not merely empty —
+ * they are absent, because a menu of controls that do nothing is worse than no
+ * menu at all.
+ */
+export function menuTopicsFor(looping: boolean): readonly MenuOption[] {
+  if (looping) return MENU_TOPICS;
+
+  return MENU_TOPICS.filter((topic) => !LOOPER_TOPICS.has(topic.id));
+}
+
 /** Whether a committed id selects a menu rather than a value. */
 export function isMenuTopic(id: string): id is MenuTopic {
   return MENU_TOPICS.some((topic) => topic.id === id);

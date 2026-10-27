@@ -75,8 +75,11 @@ body {
 
 /* ---- Controls ---- */
 
+/* The one utility that must always win. A control that lays itself out — the
+   flex rows, for instance — would otherwise keep its own `display` and stay on
+   screen while claiming to be hidden. */
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 #modeSelect,

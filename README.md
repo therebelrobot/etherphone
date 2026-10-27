@@ -87,7 +87,7 @@ will load the app but cannot reach the camera.
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
 - Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
 - A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose. It reaches the key, the instrument, the transport, and the layers too
-- A **looper**: record a chord bed, switch to Mono, record a melody over it — and drop either layer out and back in without stopping
+- A **looper**: record a chord bed, switch to Mono, record a melody over it — and drop either layer out and back in without stopping. It can be turned off entirely in Settings
 - **Transport by fist**: close one hand and flick it — up records, down stops, right plays, left clears
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
@@ -517,6 +517,19 @@ readout across the screen:
 
 Two things worth knowing: **Clear is immediate** — it is one flick, not a confirmation —
 and the whole vocabulary is also in the help modal.
+
+### Turning looping off
+
+Looping is an advanced feature — it asks a player to think in layers and bars — and the
+instrument plays perfectly well without it. **Settings → Looping** turns it off
+_completely_: no transport, no layers, no fist gestures, no lanes, and nothing about any
+of them in the guide. What is left is the instrument that existed before the looper, which
+is the one most people want:
+
+![The control stack with looping turned off](docs/screenshots/looping-off/01-off.png)
+
+The choice is remembered between visits, and turning looping off clears what was recorded
+rather than leaving it hidden — off means off.
 
 ### Instruments
 

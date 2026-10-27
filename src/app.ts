@@ -18,6 +18,7 @@ import { DEFAULT_VOICE_ID } from "./audio/voices";
 import {
   BARS_STORAGE_KEY,
   GESTURE_MAP_STORAGE_KEY,
+  LOOPING_STORAGE_KEY,
   MODE_STORAGE_KEY,
   MONO_STYLE_STORAGE_KEY,
   PROJECT_NAME,
@@ -50,7 +51,7 @@ import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
 import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
-import { MENU_TOPICS, MenuController } from "./ui/menu-controller";
+import { menuTopicsFor, MenuController } from "./ui/menu-controller";
 import type { MenuClusterName, MenuTopic } from "./ui/menu-controller";
 import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/radial-menu";
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
@@ -85,6 +86,9 @@ type TransportCue = Omit<TransportCueFrame, "canvasWidth" | "canvasHeight">;
 
 /** The id of the one-handed toggle, which is not a mode or a value. */
 const ONE_HANDED_ID = "one-handed";
+
+/** The id of the looper's on/off switch, which is likewise not a value. */
+const LOOPING_ID = "looping";
 
 /**
  * The Layers menu, once a layer is in hand.
@@ -253,9 +257,11 @@ export class GestureSynthApp {
     this.mode = restoreSelect(this.els.modeSelect, MODE_STORAGE_KEY) as InstrumentMode;
     this.monoStyle = restoreSelect(this.els.monoStyleSelect, MONO_STYLE_STORAGE_KEY) as MonoStyle;
     this.singleHanded = this.readStoredSingleHanded();
+    this.looping = this.readStoredLooping();
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
     this.renderTransportChoices();
+    this.applyLoopingVisibility();
     this.gestureMap = getGestureMap(
       restoreSelect(this.els.gestureMapSelect, GESTURE_MAP_STORAGE_KEY),
     );
@@ -579,6 +585,58 @@ export class GestureSynthApp {
     remember(SINGLE_HANDED_STORAGE_KEY, enabled ? "on" : "off");
   }
 
+  /** Reads the remembered looping setting. On unless it was turned off. */
+  private readStoredLooping(): boolean {
+    try {
+      return window.localStorage.getItem(LOOPING_STORAGE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Turns the looper on or off, and remembers it.
+   *
+   * Off means off: the transport, the layers and the fist gestures all go, and
+   * anything recorded goes with them rather than sitting there hidden. The
+   * instrument a player is left with is the one that existed before the looper —
+   * which is a perfectly good instrument, and the one most people want.
+   */
+  private setLooping(enabled: boolean): void {
+    if (enabled === this.looping) return;
+
+    this.looping = enabled;
+    remember(LOOPING_STORAGE_KEY, enabled ? "on" : "off");
+    this.applyLoopingVisibility();
+
+    if (!enabled) {
+      this.clearLoop();
+      this.transportCue = null;
+      this.forgetFists();
+    }
+
+    this.refreshHelp();
+  }
+
+  /** Shows the looper's controls only when the looper is on. */
+  private applyLoopingVisibility(): void {
+    const controls = [
+      this.els.tempoSelect,
+      this.els.barsSelect,
+      this.els.transportControls,
+      this.els.transportDisplay,
+      this.els.layerControls,
+    ];
+
+    for (const control of controls) control.classList.toggle("hidden", !this.looping);
+  }
+
+  /** Drops whatever the fist readers were holding, e.g. when looping is turned off. */
+  private forgetFists(): void {
+    this.fists.Left.reset();
+    this.fists.Right.reset();
+  }
+
   /** Switches the gesture vocabulary and keeps the readouts in step. */
   private setGestureMap(id: string): void {
     this.gestureMap = getGestureMap(id);
@@ -626,7 +684,7 @@ export class GestureSynthApp {
   /** Re-renders the two places that describe what the hands do. */
   private refreshHelp(): void {
     this.guide.render(this.mode, this.keyName, this.gestureMap);
-    this.help.render(this.mode, this.keyName, this.gestureMap);
+    this.help.render(this.mode, this.keyName, this.gestureMap, this.looping);
   }
 
   /**
@@ -998,11 +1056,11 @@ export class GestureSynthApp {
       ["Right", right],
     ];
 
-    // While the menu owns the frame the transport stands aside entirely, so a
-    // flick inside it cannot mean two things.
-    if (this.menu.open) {
-      this.fists.Left.reset();
-      this.fists.Right.reset();
+    // With the looper off there is no transport to flick; while the menu owns
+    // the frame there is no room for one either. Either way the fist stands
+    // aside rather than offering commands that would do nothing.
+    if (!this.looping || this.menu.open) {
+      this.forgetFists();
       this.transportCue = null;
       return;
     }
@@ -1118,7 +1176,7 @@ export class GestureSynthApp {
 
     const update = this.menu.update(
       {
-        menus: { layout: "radial", items: MENU_TOPICS, activeId: this.menuId },
+        menus: { layout: "radial", items: menuTopicsFor(this.looping), activeId: this.menuId },
         options: this.optionsCluster(),
         bothClosed,
         menuCursor: solo ?? (left ? this.cursorFor(left) : null),
@@ -1272,12 +1330,21 @@ export class GestureSynthApp {
         keepsMenuOpen: true,
       };
 
+      const looping: MenuOption = {
+        id: LOOPING_ID,
+        label: this.looping ? "Looping: on" : "Looping: off",
+        // Left open so the label flips where the player is looking, which is
+        // the only confirmation a toggle like this gets.
+        keepsMenuOpen: true,
+      };
+
       return {
         layout: "radial",
         items: [
           { id: "chord", label: "Chords", keepsMenuOpen: true },
           { id: "mono", label: "Mono", keepsMenuOpen: true },
           oneHanded,
+          looping,
         ],
         activeId: this.mode,
       };
@@ -1308,6 +1375,11 @@ export class GestureSynthApp {
     }
 
     if (this.menuId === "settings") {
+      if (choice.id === LOOPING_ID) {
+        this.setLooping(!this.looping);
+        return;
+      }
+
       if (choice.id === ONE_HANDED_ID) {
         this.setSingleHanded(!this.singleHanded);
         return;
@@ -1388,6 +1460,14 @@ export class GestureSynthApp {
   private layerFocus: TrackId | null = null;
   /** Whether one hand drives the whole menu, a stage at a time. */
   private singleHanded = false;
+  /**
+   * Whether the looper is available at all.
+   *
+   * Off means the instrument simply plays: no transport, no layers, no fist
+   * gestures. It is a setting rather than a hidden panel because a feature you
+   * do not use should not be a feature you have to work around.
+   */
+  private looping = true;
 
   /**
    * A normalised frame point, in canvas coordinates.
