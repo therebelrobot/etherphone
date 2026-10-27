@@ -14,12 +14,27 @@ import { defineUserSample, defineUserWavetable } from "./audio/user-voices";
 import { listVoices, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
 import type { VoiceDefinition, VoiceKind } from "./audio/voice";
 import { DEFAULT_VOICE_ID } from "./audio/voices";
-import { GESTURE_MAP_STORAGE_KEY, PROJECT_NAME } from "./config/constants";
+import {
+  GESTURE_MAP_STORAGE_KEY,
+  MODE_STORAGE_KEY,
+  MONO_STYLE_STORAGE_KEY,
+  PROJECT_NAME,
+} from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
+import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
-import type { ChordNumeral, ChordState, GestureMap, Hand, Handedness, KeyName } from "./types";
+import type {
+  ChordNumeral,
+  ChordState,
+  GestureMap,
+  Hand,
+  Handedness,
+  InstrumentMode,
+  KeyName,
+  MonoStyle,
+} from "./types";
 import { getAppElements, resizeCanvasToWindow } from "./ui/dom";
 import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
@@ -30,6 +45,7 @@ import { VolumeMeter } from "./ui/volume-meter";
 import { startCamera } from "./vision/camera";
 import {
   classifyChord,
+  getHandHeight,
   getHandHorizontalTilt,
   getRightHandQualityIndex,
   getVolumeFromHeight,
@@ -44,10 +60,38 @@ function readKeyName(select: HTMLSelectElement): KeyName {
   return (select.selectedOptions[0]?.dataset.note ?? "A") as KeyName;
 }
 
+/** Remembers a picker choice. Storage can be disabled, in which case it just will not stick. */
+function remember(storageKey: string, value: string): void {
+  try {
+    window.localStorage.setItem(storageKey, value);
+  } catch {
+    // Private mode and blocked cookies both throw here; nothing to do.
+  }
+}
+
+/**
+ * Restores a picker from storage.
+ *
+ * A value the markup no longer offers is ignored rather than assigned, so a
+ * renamed option cannot leave the instrument in a state with no matching entry.
+ */
+function restoreSelect(select: HTMLSelectElement, storageKey: string): string {
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    const isOffered = Array.from(select.options).some((option) => option.value === stored);
+    if (stored && isOffered) select.value = stored;
+  } catch {
+    // Storage can be unavailable; the markup's default stands.
+  }
+
+  return select.value;
+}
+
 export class GestureSynthApp {
   private readonly els: AppElements;
   private readonly synth: SynthEngine;
   private readonly stabilizer = new ChordStabilizer();
+  private readonly mono = new MonoReader();
   private readonly hud: Hud;
   private readonly guide: GestureGuide;
   private readonly help: HelpModal;
@@ -60,6 +104,8 @@ export class GestureSynthApp {
   private tonicFrequency: number;
   private keyName: KeyName;
   private gestureMap: GestureMap;
+  private mode: InstrumentMode;
+  private monoStyle: MonoStyle;
 
   constructor() {
     this.els = getAppElements();
@@ -84,9 +130,15 @@ export class GestureSynthApp {
 
     this.tonicFrequency = Number(this.els.keySelect.value);
     this.keyName = readKeyName(this.els.keySelect);
-    this.gestureMap = getGestureMap(this.readStoredGestureMapId());
+    this.mode = restoreSelect(this.els.modeSelect, MODE_STORAGE_KEY) as InstrumentMode;
+    this.monoStyle = restoreSelect(this.els.monoStyleSelect, MONO_STYLE_STORAGE_KEY) as MonoStyle;
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
+    this.gestureMap = getGestureMap(
+      restoreSelect(this.els.gestureMapSelect, GESTURE_MAP_STORAGE_KEY),
+    );
+    this.els.gestureMapSelect.value = this.gestureMap.id;
+    this.applyModeVisibility();
   }
 
   /**
@@ -125,6 +177,14 @@ export class GestureSynthApp {
 
     this.els.gestureMapSelect.addEventListener("change", () => {
       this.setGestureMap(this.els.gestureMapSelect.value);
+    });
+
+    this.els.modeSelect.addEventListener("change", () => {
+      this.setMode(this.els.modeSelect.value as InstrumentMode);
+    });
+
+    this.els.monoStyleSelect.addEventListener("change", () => {
+      this.setMonoStyle(this.els.monoStyleSelect.value as MonoStyle);
     });
 
     this.els.instrumentSelect.addEventListener("change", () => {
@@ -214,9 +274,58 @@ export class GestureSynthApp {
   private setGestureMap(id: string): void {
     this.gestureMap = getGestureMap(id);
     this.els.gestureMapSelect.value = this.gestureMap.id;
-    this.storeGestureMapId(this.gestureMap.id);
+    remember(GESTURE_MAP_STORAGE_KEY, this.gestureMap.id);
     this.guide.render(this.keyName, this.gestureMap);
     this.help.render(this.gestureMap);
+  }
+
+  /** Switches between chords and a single note. */
+  private setMode(mode: InstrumentMode): void {
+    if (mode === this.mode) return;
+
+    this.mode = mode;
+    this.els.modeSelect.value = mode;
+    remember(MODE_STORAGE_KEY, mode);
+    this.applyModeVisibility();
+
+    // Both modes share one sounding voice, so hand it over cleanly: silence
+    // whatever is playing and forget the notes each reader was holding.
+    this.synth.stop();
+    this.stabilizer.reset();
+    this.mono.reset();
+  }
+
+  /** Switches how the mono voice follows the pitch hand. */
+  private setMonoStyle(style: MonoStyle): void {
+    if (style === this.monoStyle) return;
+
+    this.monoStyle = style;
+    this.els.monoStyleSelect.value = style;
+    remember(MONO_STYLE_STORAGE_KEY, style);
+
+    // A glide that becomes a quantised note must be re-struck, not slid into.
+    this.synth.stop();
+    this.mono.reset();
+  }
+
+  /**
+   * Shows only the controls the current mode uses.
+   *
+   * The chord vocabulary and the mono style are alternatives, so they share one
+   * slot in the stack. The chord cheat sheet is hidden in mono mode for the same
+   * reason: it would describe shapes that do nothing there.
+   */
+  private applyModeVisibility(): void {
+    const isMono = this.mode === "mono";
+
+    this.els.gestureMapSelect.classList.toggle("hidden", isMono);
+    this.els.monoStyleSelect.classList.toggle("hidden", !isMono);
+    this.guide.setEnabled(!isMono);
+  }
+
+  /** The mono style's label, read from the picker so the two cannot drift. */
+  private get monoStyleLabel(): string {
+    return this.els.monoStyleSelect.selectedOptions[0]?.textContent ?? this.monoStyle;
   }
 
   /**
@@ -238,25 +347,7 @@ export class GestureSynthApp {
       }),
     );
 
-    select.value = this.gestureMap.id;
-  }
-
-  /** Reads the remembered map id, or the default when storage is unavailable. */
-  private readStoredGestureMapId(): string {
-    try {
-      return window.localStorage.getItem(GESTURE_MAP_STORAGE_KEY) ?? DEFAULT_GESTURE_MAP_ID;
-    } catch {
-      return DEFAULT_GESTURE_MAP_ID;
-    }
-  }
-
-  /** Remembers the chosen map. Storage can be disabled; the choice just will not stick. */
-  private storeGestureMapId(id: string): void {
-    try {
-      window.localStorage.setItem(GESTURE_MAP_STORAGE_KEY, id);
-    } catch {
-      // Private mode and blocked cookies both throw here; nothing to do.
-    }
+    select.value = DEFAULT_GESTURE_MAP_ID;
   }
 
   /**
@@ -312,6 +403,24 @@ export class GestureSynthApp {
   private updateFrame(now: number): void {
     const { Left, Right } = this.hands;
 
+    // Expression follows the right hand in both modes: it is the "how it
+    // sounds" hand, whether the left hand is playing chords or a melody.
+    const volume = Right ? getVolumeFromHeight(Right) : 0;
+    const tilt = Right ? getHandHorizontalTilt(Right, "Right") : 0;
+
+    if (Right) {
+      this.hud.setVolume(volume);
+      this.hud.setFilter(tilt);
+      this.synth.updateFilterSweep(tilt);
+    } else {
+      this.synth.setVolume(0);
+    }
+
+    if (this.mode === "mono") {
+      this.updateMonoFrame(Left, volume, tilt);
+      return;
+    }
+
     const state = this.stabilizer.update(this.readIntent(Left, Right), now);
 
     const isMajorMode = state?.isMajorMode ?? true;
@@ -322,20 +431,55 @@ export class GestureSynthApp {
     this.hud.setChord(getChordDisplayName(chord, isMajorMode, this.keyName), chord);
     this.hud.setQuality(getVoicingLabel(isMajorMode, qualityIndex), thumbDown);
 
-    // Expression follows the voicing hand; with no hand, everything rests.
-    const volume = Right ? getVolumeFromHeight(Right) : 0;
-    const tilt = Right ? getHandHorizontalTilt(Right, "Right") : 0;
-
     if (Right) {
-      this.hud.setVolume(volume);
-      this.hud.setFilter(tilt);
-      this.synth.updateFilterSweep(tilt);
       this.updateVoices(state, volume);
-    } else {
-      this.synth.setVolume(0);
     }
 
     drawEnergy(this.els.ctx, volume, qualityIndex, tilt, chord);
+  }
+
+  /**
+   * The mono voice: pitch from the left hand's height, expression from the right.
+   *
+   * There is no chord to stabilise here — the note is simply wherever the hand
+   * is — so this reads the frame directly rather than through the stabiliser.
+   */
+  private updateMonoFrame(left: Hand | null, volume: number, tilt: number): void {
+    const reading = this.mono.update(
+      left ? getHandHeight(left) : null,
+      this.monoStyle,
+      this.tonicFrequency,
+    );
+
+    if (!reading) {
+      this.synth.stop();
+      this.hud.setNote("--");
+      this.hud.setQuality(this.monoStyleLabel, false);
+      drawEnergy(this.els.ctx, 0, 0, tilt, null);
+      return;
+    }
+
+    const notes = [reading.frequency];
+
+    switch (this.monoStyle) {
+      case "glide":
+        this.synth.glideNotes(notes);
+        break;
+      case "harp":
+        // Pluck on entering a degree and let the note ring while the hand holds,
+        // so a sweep across the frame plays a run rather than one long slide.
+        if (reading.isNewDegree) this.synth.playNotes(notes);
+        break;
+      default:
+        this.synth.playNotes(notes);
+    }
+
+    this.synth.setVolume(volume);
+
+    this.hud.setNote(monoNoteLabel(reading, this.keyName));
+    this.hud.setQuality(this.monoStyleLabel, false);
+    // One ribbon line, coloured by the degree the note sits on.
+    drawEnergy(this.els.ctx, volume, 1, tilt, monoNumeral(reading));
   }
 
   /** Sends the current intent to the synth, or silences it. */

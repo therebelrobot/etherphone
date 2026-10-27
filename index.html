@@ -20,6 +20,11 @@
         <div class="vol-bar" data-index="1"></div>
         <div class="vol-bar" data-index="0"></div>
       </div>
+      <select id="modeSelect" title="What the left hand plays: chords, or one note at a time">
+        <option value="chord" selected>Chords</option>
+        <option value="mono">Mono</option>
+      </select>
+
       <select id="keySelect">
         <option value="220.00" data-note="A" selected>A</option>
         <option value="233.08" data-note="Bb">A#/Bb</option>
@@ -36,6 +41,13 @@
       </select>
 
       <select id="gestureMapSelect" title="Gesture map — the chords your left hand plays"></select>
+
+      <select id="monoStyleSelect" class="hidden" title="How the mono voice follows the pitch hand">
+        <option value="quantised" selected>Quantised</option>
+        <option value="glide">Glide</option>
+        <option value="harp">Harp</option>
+      </select>
+
       <select id="instrumentSelect"></select>
       <button id="loadWavetable" class="load-button">Load Wavetable…</button>
       <button id="loadSample" class="load-button">Load Sample…</button>

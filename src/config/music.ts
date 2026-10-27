@@ -22,8 +22,20 @@ export const DEGREE_SEMITONES: Record<number, number> = {
   7: -1,
 };
 
-/** Scale degree keyed by roman numeral. */
-export const NUMERAL_TO_DEGREE: Record<Numeral, number> = {
+/**
+ * Semitones above the tonic for a *rising* major scale, used by the mono voice.
+ *
+ * Deliberately not {@link DEGREE_SEMITONES}. That table puts degree VII a
+ * semitone *below* the tonic, which is right for a chord rooted on the leading
+ * tone but wrong for a melody: a run up the scale has to keep climbing, and
+ * reusing the chord table would drop an octave at every seventh step.
+ */
+export const MONO_SCALE_SEMITONES: readonly number[] = [0, 2, 4, 5, 7, 9, 11];
+
+/** Scale degree keyed by roman numeral. */ export const NUMERAL_TO_DEGREE: Record<
+  Numeral,
+  number
+> = {
   I: 1,
   II: 2,
   III: 3,
@@ -32,6 +44,9 @@ export const NUMERAL_TO_DEGREE: Record<Numeral, number> = {
   VI: 6,
   VII: 7,
 };
+
+/** Roman numeral keyed by scale degree, the inverse of {@link NUMERAL_TO_DEGREE}. */
+export const DEGREE_NUMERALS: readonly Numeral[] = ["I", "II", "III", "IV", "V", "VI", "VII"];
 
 /** The note names available at each scale degree, per selectable key. */
 export const MAJOR_SCALE: Record<KeyName, readonly string[]> = {

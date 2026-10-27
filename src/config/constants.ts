@@ -44,6 +44,18 @@ export const TILT_MAX_TRAVEL = 0.12;
 export const VOLUME_TOP_Y = 0.05;
 export const VOLUME_BOTTOM_Y = 0.95;
 
+/**
+ * The vertical band of the frame the mono voice maps onto its pitch range.
+ *
+ * Slightly inset from the volume band so a note is already sounding by the time
+ * the hand reaches the very top or bottom of the frame.
+ */
+export const MONO_PITCH_TOP_Y = 0.1;
+export const MONO_PITCH_BOTTOM_Y = 0.9;
+
+/** Octaves the pitch hand spans, from the bottom of its band to the top. */
+export const MONO_OCTAVE_SPAN = 2;
+
 /** Radius of the hand-skeleton dots drawn onto the overlay, in canvas pixels. */
 export const LANDMARK_DOT_RADIUS = 4;
 
@@ -52,6 +64,10 @@ export const LANDMARK_DOT_RADIUS = 4;
  * on reload would be a toy, so the picker's choice is persisted.
  */
 export const GESTURE_MAP_STORAGE_KEY = "etherphone.gesture-map";
+
+/** Where the instrument mode and the mono style are remembered between visits. */
+export const MODE_STORAGE_KEY = "etherphone.mode";
+export const MONO_STYLE_STORAGE_KEY = "etherphone.mono-style";
 
 /** Synth voicing and filter response. */
 export const AUDIO = {
@@ -70,6 +86,14 @@ export const AUDIO = {
   gainSmoothingSeconds: 0.03,
   /** Master-gain ramp used by {@link SynthEngine.setVolume}, in seconds. */
   volumeRampSeconds: 0.05,
+
+  /**
+   * Portamento time constant, in seconds, for retuning a sounding note.
+   *
+   * Short enough to read as a slide rather than a swoop. Used by the voices'
+   * `retune`, which is what the mono voice's glide style drives.
+   */
+  glideSeconds: 0.06,
 
   /**
    * Harmonics a wavetable may use. 64 is well past the point where more

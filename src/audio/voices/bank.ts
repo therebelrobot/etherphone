@@ -6,6 +6,7 @@
  * class with a different `configure`, which keeps the lifecycle — build on
  * change, stop on release, tear down on dispose — in one place.
  */
+import { AUDIO } from "../../config/constants";
 import { frequenciesKey } from "../voice";
 import type { Voice } from "../voice";
 
@@ -57,6 +58,29 @@ export class OscillatorBank implements Voice {
   release(): void {
     this.silence();
     this.currentKey = null;
+  }
+
+  /**
+   * Slides the sounding oscillators to new frequencies.
+   *
+   * A note count that does not match the sounding notes cannot be reached by
+   * retuning, so that falls back to a rebuild. Otherwise each oscillator is
+   * ramped to its new pitch with a time constant, which is what turns a stream
+   * of per-frame frequencies into a glide rather than a stutter.
+   */
+  retune(freqs: number[]): boolean {
+    if (!this.ctx || freqs.length !== this.oscillators.length || freqs.length === 0) {
+      return this.play(freqs);
+    }
+
+    const now = this.ctx.currentTime;
+
+    freqs.forEach((freq, index) => {
+      this.oscillators[index].frequency.setTargetAtTime(freq, now, AUDIO.glideSeconds);
+    });
+
+    this.currentKey = frequenciesKey(freqs);
+    return true;
   }
 
   dispose(): void {

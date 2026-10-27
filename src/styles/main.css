@@ -75,8 +75,14 @@ body {
 
 /* ---- Controls ---- */
 
+.hidden {
+  display: none;
+}
+
+#modeSelect,
 #keySelect,
 #gestureMapSelect,
+#monoStyleSelect,
 #instrumentSelect,
 .load-button,
 #guideToggle {
@@ -92,24 +98,31 @@ body {
   z-index: 5;
 }
 
-#keySelect {
+#modeSelect {
   top: 12px;
 }
 
-#gestureMapSelect {
+#keySelect {
   top: 48px;
 }
 
-#instrumentSelect {
+/* The chord vocabulary and the mono style are alternatives, so they share a
+   slot: the mode decides which one is on screen. */
+#gestureMapSelect,
+#monoStyleSelect {
   top: 84px;
 }
 
-#loadWavetable {
+#instrumentSelect {
   top: 120px;
 }
 
-#loadSample {
+#loadWavetable {
   top: 156px;
+}
+
+#loadSample {
+  top: 192px;
 }
 
 .load-button {
@@ -117,7 +130,7 @@ body {
 }
 
 #guideToggle {
-  top: 192px;
+  top: 228px;
   cursor: pointer;
 }
 
@@ -140,7 +153,7 @@ body {
 
 #gestureGuide {
   position: absolute;
-  top: 230px;
+  top: 266px;
   left: 12px;
   display: flex;
   flex-direction: column;

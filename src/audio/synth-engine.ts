@@ -165,6 +165,26 @@ export class SynthEngine {
     }
   }
 
+  /**
+   * Slides the sounding notes to new frequencies, for continuous pitch.
+   *
+   * Prefers the voice's own `retune`, which changes pitch without restarting the
+   * note. A voice that cannot retune falls back to {@link playNotes}, so a glide
+   * on such an instrument steps instead of sliding rather than going silent.
+   */
+  glideNotes(freqs: number[]): void {
+    if (!this.ctx || !this.voice || freqs.length === 0) return;
+
+    const key = frequenciesKey(freqs);
+    if (key === this.currentKey) return;
+
+    const settled = this.voice.retune ? this.voice.retune(freqs) : this.voice.play(freqs);
+
+    if (settled) {
+      this.currentKey = key;
+    }
+  }
+
   /** Silences and tears down every voice. */
   stop(): void {
     this.setVolume(0);

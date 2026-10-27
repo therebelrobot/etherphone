@@ -79,6 +79,8 @@ will load the app but cannot reach the camera.
 - Left hand chooses the chord and, by tilt, whether it is major or minor
 - Right hand chooses the voicing and the expression
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
+- A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
+- Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -88,7 +90,6 @@ will load the app but cannot reach the camera.
 
 - Change key, instrument, and transport by gesture, with dwell instead of click
 - Build your own gesture map, by gesture rather than by mouse
-- A mono voice for leads and basslines
 - Record musical intent and loop it against a real tempo
 - Capture the microphone and loop voice as a layer
 - Tune a captured voice loop to the key without changing its timing
@@ -160,6 +161,8 @@ src/
 
   music/
     harmony.ts             Roman numeral + tonic -> note names and frequencies.
+    mono.ts                The mono voice's pitch mapping: height -> scale degree,
+                           and the quantised, glide, and harp readings of it.
     gesture-map.ts         The gesture vocabulary as data: hand shapes as bitmasks,
                            and the Classic, Triad, and Pentatonic presets.
     voicings.ts            The four right-hand voicings per mode, each with a label
@@ -206,17 +209,12 @@ and it will make a mic loop one too.
 
 ### How the gestures map to music
 
-The left hand's vocabulary is a **gesture map**, chosen in the picker next to the key.
-Three presets ship; the choice is remembered between visits.
+The instrument has two **modes**, chosen in the picker at the top of the stack. The
+split is deliberate and worth remembering: the **left hand is the "which notes"
+hand** — harmony in Chords, pitch in Mono — and the **right hand is always the "how
+it sounds" hand**, with the same jobs in both modes.
 
-- **Classic** — the inherited vocabulary, and the default, so existing players'
-  hands keep working unchanged.
-- **Triad** — three chords only, I, IV, and V, on one to three fingers. Four or
-  more fingers play nothing, so a degree you are not using cannot fire.
-- **Pentatonic** — the five pentatonic degrees on one to five fingers. It needs no
-  rock sign, which is also the shape some players cannot make.
-
-**Left hand — chord** (the Classic map)
+**Left hand — chord** (Chords mode, the Classic map)
 
 | Input                 | Result           |
 | --------------------- | ---------------- |
@@ -224,6 +222,12 @@ Three presets ship; the choice is remembered between visits.
 | Index + pinky         | VI               |
 | Index + pinky + thumb | VII              |
 | Tilt inward / outward | Major / minor    |
+
+**Left hand — pitch** (Mono mode)
+
+| Input  | Result                                          |
+| ------ | ----------------------------------------------- |
+| Height | A single note: higher in the frame is higher up |
 
 **Right hand — voicing and expression**
 
@@ -236,7 +240,21 @@ Three presets ship; the choice is remembered between visits.
 
 The chord hand feeds `ChordStabilizer`, which requires a new chord to hold for 100ms
 before it is committed and tolerates a 50ms dropout. That is why the instrument does
-not flicker between chords when MediaPipe loses a hand for a frame.
+not flicker between chords when MediaPipe loses a hand for a frame. Mono mode reads
+the frame directly: there is no chord to stabilise, because the note is simply
+wherever the hand is.
+
+#### Chords mode
+
+The left hand's vocabulary is a **gesture map**, chosen in the picker below the key.
+Three presets ship; the choice is remembered between visits.
+
+- **Classic** — the inherited vocabulary, and the default, so existing players'
+  hands keep working unchanged.
+- **Triad** — three chords only, I, IV, and V, on one to three fingers. Four or
+  more fingers play nothing, so a degree you are not using cannot fire.
+- **Pentatonic** — the five pentatonic degrees on one to five fingers. It needs no
+  rock sign, which is also the shape some players cannot make.
 
 This vocabulary is inherited from Gesture Synth, and the Classic map is a _diatonic
 seventh-chord_ vocabulary: it assumes seven degrees and a hand that can make a rock
@@ -247,6 +265,30 @@ three chords they want, or reach them with shapes their hands actually make. The
 presets ship; a gesture-driven editor for building custom maps is the remaining half
 of that RFC, and waits on the gesture menu ([#4](https://github.com/therebelrobot/etherphone/issues/4))
 so it can be used without a keyboard.
+
+#### Mono mode
+
+One note at a time, chosen by the left hand's height and quantised to the key, over a
+range of `MONO_OCTAVE_SPAN` octaves. The pitch hand's position is read three ways:
+
+| Style         | What it does                                                                               |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| **Quantised** | Snaps to the nearest scale degree and holds it; moving the hand steps to the next.         |
+| **Glide**     | Slides continuously between degrees, retuning the sounding note rather than restarting it. |
+| **Harp**      | Plucks a fresh note each time the hand enters a degree, so a sweep plays a run.            |
+
+Harp is the Omnichord's strum plate: the frame is a span of in-key notes, and moving
+through them plays them in sequence. A harp sweep is why the mono voice has its own
+ascending scale (`MONO_SCALE_SEMITONES`) rather than reusing the chord table's
+`DEGREE_SEMITONES` — the latter tunes degree VII a semitone _below_ the tonic, which
+is right for a chord rooted on the leading tone but would drop an octave at every
+seventh step of a run.
+
+Glide is the one place the `Voice` seam needed extending. `play()` rebuilds its
+oscillators whenever the frequencies change, which is right for a chord and wrong for
+a glide, so `Voice` gained an optional `retune()` that slides a sounding note instead.
+A voice that cannot retune falls back to `play`, so a glide on such an instrument
+steps rather than going silent.
 
 ### Instruments
 
