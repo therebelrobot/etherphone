@@ -41,9 +41,9 @@ import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
 import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
-import { MenuController, isMenuTopic, isModeSwitch, menuOptionsFor } from "./ui/menu-controller";
-import type { MenuTopic } from "./ui/menu-controller";
-import { drawMenu } from "./ui/radial-menu";
+import { MENU_TOPICS, MenuController } from "./ui/menu-controller";
+import type { MenuClusterName, MenuTopic } from "./ui/menu-controller";
+import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/radial-menu";
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
@@ -523,9 +523,12 @@ export class GestureSynthApp {
 
     const update = this.menu.update(
       {
-        ...this.menuInput(),
+        menus: { layout: "radial", items: MENU_TOPICS, activeId: this.menuId },
+        options: this.optionsCluster(),
         bothClosed,
-        cursor: right ? this.cursorFor(right) : null,
+        // The left hand picks the menu; the right hand picks the option in it.
+        menuCursor: left ? this.cursorFor(left) : null,
+        optionCursor: right ? this.cursorFor(right) : null,
         canvasWidth: this.els.canvas.width,
         canvasHeight: this.els.canvas.height,
       },
@@ -544,78 +547,116 @@ export class GestureSynthApp {
     }
 
     if (!update.isOpen) {
-      // The next open starts at the ring again, not wherever this one ended up.
-      this.menuTopic = null;
+      // The next open starts on the vocabulary again, not wherever this one was.
+      this.menuId = "vocabulary";
       return false;
     }
 
-    this.hud.setNote(update.hoveredId === null ? "MENU" : this.labelFor(update.hoveredId));
-    this.hud.setQuality("Control", false);
-    drawMenu(this.els.ctx, update);
+    drawMenuBackdrop(this.els.ctx, update.elapsedMs);
+    drawCluster(this.els.ctx, update.menus, MENUS_STYLE);
+    drawCluster(this.els.ctx, update.options, OPTIONS_STYLE);
+
+    this.hud.setNote(this.menuLabel(update.menus));
+    this.hud.setQuality(
+      update.options.hoveredId === null ? "Control" : this.labelFor(update.options),
+      false,
+    );
 
     return true;
   }
 
-  /** What the menu should show: the ring, or a topic's list. */
-  private menuInput(): { layout: MenuLayout; options: readonly MenuOption[] } {
-    if (this.menuTopic === null) {
-      const select = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
+  /** The label under the readout: the menu in play, and the option hovered. */
+  private menuLabel(frame: { items: readonly MenuOption[]; activeId: string | null }): string {
+    return frame.items.find((item) => item.id === frame.activeId)?.label ?? "MENU";
+  }
 
-      const vocabulary = Array.from(select.options).map((option) => ({
+  /** The values the current menu holds. */
+  private optionsCluster(): {
+    layout: MenuLayout;
+    items: readonly MenuOption[];
+    activeId?: string;
+  } {
+    const asOptions = (select: HTMLSelectElement): MenuOption[] =>
+      Array.from(select.options).map((option) => ({
         id: option.value,
         label: option.textContent ?? option.value,
       }));
 
-      return { layout: "radial", options: menuOptionsFor(this.mode, vocabulary) };
+    if (this.menuId === "key") {
+      return {
+        layout: "list",
+        items: asOptions(this.els.keySelect),
+        activeId: this.els.keySelect.value,
+      };
     }
 
-    const select = this.menuTopic === "key" ? this.els.keySelect : this.els.instrumentSelect;
+    if (this.menuId === "instrument") {
+      return {
+        layout: "list",
+        items: asOptions(this.els.instrumentSelect),
+        activeId: this.els.instrumentSelect.value,
+      };
+    }
+
+    if (this.menuId === "settings") {
+      return {
+        layout: "radial",
+        items: [
+          { id: "chord", label: "Chords" },
+          { id: "mono", label: "Mono" },
+        ],
+        activeId: this.mode,
+      };
+    }
+
+    const vocabulary = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
 
     return {
-      layout: "list",
-      options: Array.from(select.options).map((option) => ({
-        id: option.value,
-        label: option.textContent ?? option.value,
-      })),
+      layout: "radial",
+      items: asOptions(vocabulary),
+      activeId: vocabulary.value,
     };
   }
 
-  /** The label of a menu option, for the readout. */
-  private labelFor(id: string): string {
-    return this.menuInput().options.find((option) => option.id === id)?.label ?? id;
+  /** The label of a cluster's hovered item, for the readout. */
+  private labelFor(frame: { items: readonly MenuOption[]; hoveredId: string | null }): string {
+    return frame.items.find((item) => item.id === frame.hoveredId)?.label ?? "";
   }
 
-  /** Applies a committed menu choice to whatever it came from. */
-  private applyMenuChoice(id: string): void {
-    if (isMenuTopic(id)) {
-      this.menuTopic = id;
+  /** Applies a committed choice to whatever it came from. */
+  private applyMenuChoice(choice: { cluster: MenuClusterName; id: string }): void {
+    if (choice.cluster === "menus") {
+      // A menu choice changes what the other cluster holds, so the menu stays
+      // open and the right hand picks up from the new list.
+      this.menuId = choice.id as MenuTopic;
       return;
     }
 
-    if (isModeSwitch(id)) {
-      this.setMode(id);
+    if (this.menuId === "settings") {
+      // Settings holds the mode, which is what the vocabulary menu depends on.
+      this.setMode(choice.id as InstrumentMode);
       return;
     }
 
-    if (this.menuTopic === "key") {
-      this.setKey(id);
+    if (this.menuId === "key") {
+      this.setKey(choice.id);
       return;
     }
 
-    if (this.menuTopic === "instrument") {
-      this.setInstrument(id);
+    if (this.menuId === "instrument") {
+      this.setInstrument(choice.id);
       return;
     }
 
     if (this.mode === "mono") {
-      this.setMonoStyle(id as MonoStyle);
+      this.setMonoStyle(choice.id as MonoStyle);
     } else {
-      this.setGestureMap(id);
+      this.setGestureMap(choice.id);
     }
   }
 
-  /** Which picker the menu is showing: the ring, or a topic's list. */
-  private menuTopic: MenuTopic | null = null;
+  /** Which menu the left hand has chosen, and the right hand is choosing within. */
+  private menuId: MenuTopic = "vocabulary";
 
   /**
    * The right hand's palm centre, in canvas coordinates, for the menu cursor.

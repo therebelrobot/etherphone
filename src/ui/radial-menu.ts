@@ -28,18 +28,22 @@ export interface MenuOption {
   readonly keepsMenuOpen?: boolean;
 }
 
-/** Everything one frame of the menu needs to draw itself. */
-export interface MenuFrame {
+/** Everything one frame of one cluster needs to draw itself. */
+export interface ClusterFrame {
   readonly layout: MenuLayout;
-  /** Options placed around the anchor, when the layout is a ring. */
+  /** The items, in order, so labels can be drawn. */
+  readonly items: readonly MenuOption[];
+  /** The item currently in force, drawn as active. */
+  readonly activeId: string | null;
+  /** Items placed around the anchor, when the layout is a ring. */
   readonly slots: readonly RadialSlot[];
-  /** Options stacked down the canvas, when the layout is a list. */
+  /** Items stacked down the canvas, when the layout is a list. */
   readonly rows: readonly ListRow[];
   readonly centerX: number;
   readonly centerY: number;
   /** Where the cursor is, or `null` when no hand is driving it. */
   readonly cursor: CanvasPoint | null;
-  /** The id of the option being dwelt on, if any. */
+  /** The id of the item being dwelt on, if any. */
   readonly hoveredId: string | null;
   /** How far the dwell has filled, 0..1. */
   readonly dwellProgress: number;
@@ -48,13 +52,56 @@ export interface MenuFrame {
 }
 
 const GOLD = "#e8a13d";
+/** The menus cluster's accent: cool, where the options are gold. */
+const STEEL = "#7fa8c9";
 const DIMMED = "rgba(10, 10, 10, 0.6)";
 const OPTION_IDLE = "rgba(20, 20, 20, 0.75)";
-const OPTION_HOVER = "rgba(232, 161, 61, 0.18)";
 const EDGE = "#3a3428";
 
 /** The one thing a player cannot guess: how to leave without choosing. */
 const DISMISS_HINT = "close both hands again to dismiss";
+
+/**
+ * How a cluster is drawn.
+ *
+ * The two clusters have to be tellable apart at a glance, because one is the
+ * menu you are in and the other is the list of menus you could be in. Colour
+ * alone is not enough on its own — it fails for colour-blind players and washes
+ * out on a busy camera frame — so the menus cluster also gets a chevron and a
+ * dashed outline. Three signals for the same idea: *this leads somewhere else*.
+ */
+export interface ClusterStyle {
+  readonly accent: string;
+  readonly hoverFill: string;
+  /** Fill for the item currently in force, so you can see where you are. */
+  readonly activeFill: string;
+  /** Prefix labels with a chevron, marking them as ways into somewhere else. */
+  readonly chevron: boolean;
+  readonly dashed: boolean;
+}
+
+/** The menus cluster: a way into somewhere else. */
+export const MENUS_STYLE: ClusterStyle = {
+  accent: STEEL,
+  hoverFill: "rgba(127, 168, 201, 0.20)",
+  activeFill: "rgba(127, 168, 201, 0.34)",
+  chevron: true,
+  dashed: true,
+};
+
+/** The options cluster: the choices inside the menu you are in. */
+export const OPTIONS_STYLE: ClusterStyle = {
+  accent: GOLD,
+  hoverFill: "rgba(232, 161, 61, 0.18)",
+  activeFill: "rgba(232, 161, 61, 0.30)",
+  chevron: false,
+  dashed: false,
+};
+
+/** The label as drawn, with the chevron when the cluster leads elsewhere. */
+function labelFor(item: MenuOption, style: ClusterStyle): string {
+  return style.chevron ? `› ${item.label}` : item.label;
+}
 
 /**
  * Places options evenly around a circle, starting at the top and going clockwise.
@@ -305,20 +352,64 @@ export function listRowState(
   };
 }
 
-/** Draws one frame of the menu over whatever is already on the canvas. */
-export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFrame): void {
+/**
+ * Draws the dimming and the way out, once, behind both clusters.
+ *
+ * Separate from the clusters because they share it: drawing it per cluster would
+ * dim the screen twice over.
+ */
+export function drawMenuBackdrop(ctx: CanvasRenderingContext2D | null, elapsedMs: number): void {
   if (!ctx) return;
 
-  const { slots, centerX, centerY, cursor, hoveredId, dwellProgress, elapsedMs } = frame;
+  const fade = clamp01(elapsedMs / 200);
 
   ctx.save();
 
-  // Push the instrument back so the options read clearly, fading in with the
-  // menu rather than arriving ahead of what it is there to frame.
-  ctx.globalAlpha = clamp01(elapsedMs / 200);
+  ctx.globalAlpha = fade;
   ctx.fillStyle = DIMMED;
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.globalAlpha = 1;
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // There is no pointer to click away with, so the way to bail out has to be
+  // said rather than discovered.
+  ctx.globalAlpha = fade * 0.75;
+  ctx.font = "13px monospace";
+  ctx.fillStyle = GOLD;
+  ctx.fillText(DISMISS_HINT, ctx.canvas.width / 2, 44);
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+/** Draws one cluster, in whichever layout it is using. */
+export function drawCluster(
+  ctx: CanvasRenderingContext2D | null,
+  frame: ClusterFrame,
+  style: ClusterStyle,
+): void {
+  if (!ctx) return;
+
+  if (frame.layout === "list") {
+    drawListCluster(ctx, frame, style);
+    return;
+  }
+
+  drawRingCluster(ctx, frame, style);
+}
+
+/** Draws a cluster laid out around its anchor. */
+function drawRingCluster(
+  ctx: CanvasRenderingContext2D,
+  frame: ClusterFrame,
+  style: ClusterStyle,
+): void {
+  const { slots, items, activeId, centerX, centerY, cursor, hoveredId, dwellProgress, elapsedMs } =
+    frame;
+
+  ctx.save();
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -327,9 +418,10 @@ export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: Menu
     const state = fanState(slot, index, elapsedMs, centerX, centerY);
     if (state.radius <= 0.5) return;
 
+    const item = items[index];
     const isHovered = slot.id === hoveredId;
+    const isActive = slot.id === activeId;
 
-    // Stretched along its own radius, which is the direction it is travelling.
     ctx.save();
     ctx.translate(state.x, state.y);
     ctx.rotate(slot.angle);
@@ -345,18 +437,20 @@ export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: Menu
       Math.PI * 2,
     );
     ctx.globalAlpha = state.alpha;
-    ctx.fillStyle = isHovered ? OPTION_HOVER : OPTION_IDLE;
+    ctx.fillStyle = isHovered ? style.hoverFill : isActive ? style.activeFill : OPTION_IDLE;
     ctx.fill();
-    ctx.lineWidth = isHovered ? 3 : 1;
-    ctx.strokeStyle = isHovered ? GOLD : EDGE;
+    ctx.lineWidth = isHovered ? 3 : isActive ? 2 : 1;
+    ctx.strokeStyle = isHovered || isActive ? style.accent : EDGE;
+    ctx.setLineDash(style.dashed && !isHovered && !isActive ? [6, 6] : []);
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.restore();
 
     // The label stays upright, and arrives with the option rather than before it.
     ctx.globalAlpha = state.alpha;
-    ctx.fillStyle = GOLD;
+    ctx.fillStyle = style.accent;
     ctx.font = "16px monospace";
-    ctx.fillText(slot.label, state.x, state.y);
+    ctx.fillText(item ? labelFor(item, style) : slot.label, state.x, state.y);
     ctx.globalAlpha = 1;
 
     // The dwell ring: an arc that closes as the hold completes, so the commit
@@ -371,12 +465,12 @@ export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: Menu
         -Math.PI / 2 + dwellProgress * Math.PI * 2,
       );
       ctx.lineWidth = 4;
-      ctx.strokeStyle = GOLD;
+      ctx.strokeStyle = style.accent;
       ctx.stroke();
     }
   });
 
-  // A quiet mark where the menu is centred, so the dead zone is visible.
+  // A quiet mark where the cluster is centred, so the dead zone is visible.
   ctx.globalAlpha = clamp01(elapsedMs / 200);
   ctx.beginPath();
   ctx.arc(centerX, centerY, 3, 0, Math.PI * 2);
@@ -387,35 +481,25 @@ export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: Menu
     ctx.beginPath();
     ctx.arc(cursor.x, cursor.y, 12, 0, Math.PI * 2);
     ctx.lineWidth = 2;
-    ctx.strokeStyle = GOLD;
+    ctx.strokeStyle = style.accent;
     ctx.stroke();
   }
-
-  // How to get out. There is no pointer to click away with, so the way to bail
-  // out has to be said rather than discovered.
-  ctx.globalAlpha = clamp01(elapsedMs / 200) * 0.75;
-  ctx.font = "13px monospace";
-  ctx.fillStyle = GOLD;
-  ctx.fillText(DISMISS_HINT, ctx.canvas.width / 2, 44);
 
   ctx.globalAlpha = 1;
   ctx.restore();
 }
 
-/** Draws one frame of a list menu. */
-export function drawListMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFrame): void {
-  if (!ctx) return;
-
-  const { rows, centerY, hoveredId, dwellProgress, elapsedMs } = frame;
-  const { width, height } = ctx.canvas;
+/** Draws a cluster laid out as rows down the canvas. */
+function drawListCluster(
+  ctx: CanvasRenderingContext2D,
+  frame: ClusterFrame,
+  style: ClusterStyle,
+): void {
+  const { rows, items, activeId, centerY, hoveredId, dwellProgress, elapsedMs } = frame;
+  const { width } = ctx.canvas;
   const rowWidth = Math.min(CONTROL.listRowWidth, width * 0.8);
 
   ctx.save();
-
-  ctx.globalAlpha = clamp01(elapsedMs / 200);
-  ctx.fillStyle = DIMMED;
-  ctx.fillRect(0, 0, width, height);
-  ctx.globalAlpha = 1;
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -425,7 +509,10 @@ export function drawListMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFr
     const state = listRowState(row, index, elapsedMs, centerY);
     if (state.alpha <= 0.01) return;
 
+    const item = items[index];
     const isHovered = row.id === hoveredId;
+    const isActive = row.id === activeId;
+
     const left = (width - rowWidth) / 2;
     const top = state.y - state.height / 2 + 3;
     const barHeight = state.height - 6;
@@ -434,42 +521,30 @@ export function drawListMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFr
 
     ctx.beginPath();
     ctx.roundRect(left, top, rowWidth, barHeight, 6);
-    ctx.fillStyle = isHovered ? OPTION_HOVER : OPTION_IDLE;
+    ctx.fillStyle = isHovered ? style.hoverFill : isActive ? style.activeFill : OPTION_IDLE;
     ctx.fill();
-    ctx.lineWidth = isHovered ? 2 : 1;
-    ctx.strokeStyle = isHovered ? GOLD : EDGE;
+    ctx.lineWidth = isHovered ? 2 : isActive ? 2 : 1;
+    ctx.strokeStyle = isHovered || isActive ? style.accent : EDGE;
+    ctx.setLineDash(style.dashed && !isHovered && !isActive ? [6, 6] : []);
     ctx.stroke();
+    ctx.setLineDash([]);
 
     // The dwell fills the row from the left, so the commit is never a surprise.
     if (isHovered && dwellProgress > 0) {
       ctx.save();
       ctx.clip();
-      ctx.fillStyle = "rgba(232, 161, 61, 0.22)";
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = style.accent;
       ctx.fillRect(left, top, rowWidth * dwellProgress, barHeight);
       ctx.restore();
     }
 
-    ctx.fillStyle = GOLD;
-    ctx.fillText(row.label, width / 2, state.y);
+    ctx.fillStyle = style.accent;
+    ctx.fillText(item ? labelFor(item, style) : row.label, width / 2, state.y);
 
     ctx.globalAlpha = 1;
   });
 
-  ctx.globalAlpha = clamp01(elapsedMs / 200) * 0.75;
-  ctx.font = "13px monospace";
-  ctx.fillStyle = GOLD;
-  ctx.fillText(DISMISS_HINT, width / 2, 44);
-
   ctx.globalAlpha = 1;
   ctx.restore();
-}
-
-/** Draws one frame of whichever layout the menu is using. */
-export function drawMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFrame): void {
-  if (frame.layout === "list") {
-    drawListMenu(ctx, frame);
-    return;
-  }
-
-  drawRadialMenu(ctx, frame);
 }
