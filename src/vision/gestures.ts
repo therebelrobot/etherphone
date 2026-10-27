@@ -6,8 +6,16 @@
  * to re-tune.
  */
 import { TILT_MAX_TRAVEL, VOLUME_BOTTOM_Y, VOLUME_TOP_Y } from "../config/constants";
-import { ROMAN_BY_FINGER_COUNT } from "../config/music";
-import type { ChordMode, ChordNumeral, FingerName, Hand, Handedness } from "../types";
+import { shapeFromFingers } from "../music/gesture-map";
+import type {
+  ChordMode,
+  ChordNumeral,
+  FingerName,
+  GestureMap,
+  Hand,
+  Handedness,
+  HandShape,
+} from "../types";
 
 /** The joint pair that decides whether a finger is extended. */
 export const FINGERS: Record<FingerName, { readonly pip: number; readonly tip: number }> = {
@@ -52,34 +60,39 @@ export function getChordQuality(landmarks: Hand): ChordMode {
   return middleMcp.x > wrist.x ? "minor" : "major";
 }
 
+/** Reads the hand's extended fingers into a single shape bitmask. */
+export function readHandShape(landmarks: Hand, handedness: Handedness): HandShape {
+  return shapeFromFingers({
+    thumb: isThumbExtended(landmarks, handedness),
+    index: isFingerExtended(landmarks, "index"),
+    middle: isFingerExtended(landmarks, "middle"),
+    ring: isFingerExtended(landmarks, "ring"),
+    pinky: isFingerExtended(landmarks, "pinky"),
+  });
+}
+
 /**
- * Reads the chord hand into a roman numeral.
+ * Reads the chord hand into a roman numeral, using the supplied vocabulary.
  *
- * Finger count picks the scale degree (1–5), except for the two rock-sign
- * shapes which map to VI and VII. Case carries the mode.
+ * The shape is looked up in the map rather than reasoned about here, so the
+ * gesture language is data a player can choose. When the map lets tilt pick the
+ * mode, the numeral's case is overwritten from the hand's roll; when it does
+ * not, the case the map stored is the one that plays.
  */
-export function classifyChord(landmarks: Hand, handedness: Handedness): ChordNumeral | null {
-  const thumb = isThumbExtended(landmarks, handedness);
-  const index = isFingerExtended(landmarks, "index");
-  const middle = isFingerExtended(landmarks, "middle");
-  const ring = isFingerExtended(landmarks, "ring");
-  const pinky = isFingerExtended(landmarks, "pinky");
+export function classifyChord(
+  landmarks: Hand,
+  handedness: Handedness,
+  map: GestureMap,
+): ChordNumeral | null {
+  const numeral = map.shapes.get(readHandShape(landmarks, handedness)) ?? null;
+  if (!numeral) return null;
+
+  if (!map.tiltPicksMode) return numeral;
 
   const quality = getChordQuality(landmarks);
-
-  if (index && pinky && !middle && !ring && !thumb) {
-    return quality === "major" ? "VI" : "vi";
-  }
-
-  if (index && pinky && !middle && !ring && thumb) {
-    return quality === "major" ? "VII" : "vii";
-  }
-
-  const count = [thumb, index, middle, ring, pinky].filter(Boolean).length;
-  const base = ROMAN_BY_FINGER_COUNT[count];
-  if (!base) return null;
-
-  return quality === "major" ? base : (base.toLowerCase() as ChordNumeral);
+  return quality === "major"
+    ? (numeral.toUpperCase() as ChordNumeral)
+    : (numeral.toLowerCase() as ChordNumeral);
 }
 
 /**

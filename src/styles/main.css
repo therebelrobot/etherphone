@@ -267,6 +267,21 @@ body {
   color: #ffbf5c;
 }
 
+.help-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.help-row-gesture {
+  width: 32px;
+  font-size: 18px;
+}
+
+.help-row-result {
+  color: #e8a13d;
+}
+
 #closeHelp {
   float: right;
   background: none;

@@ -35,6 +35,7 @@
         <option value="415.30" data-note="Ab">G#/Ab</option>
       </select>
 
+      <select id="gestureMapSelect"></select>
       <select id="instrumentSelect"></select>
       <button id="loadWavetable" class="load-button">Load Wavetable…</button>
       <button id="loadSample" class="load-button">Load Sample…</button>
@@ -77,14 +78,11 @@
 
           <p>
             <b>Fingers (Scale Degree)</b><br />
-            1 → I<br />
-            2 → II<br />
-            3 → III<br />
-            4 → IV<br />
-            5 → V<br />
-            Index + Pinky → VI<br />
-            Index + Pinky + Thumb → VII
+            These follow the selected <b>gesture map</b>. The default, <i>Classic</i>, is the
+            vocabulary inherited from Gesture Synth; <i>Triad</i> and <i>Pentatonic</i> are smaller
+            sets. The on-screen guide always shows the active map.
           </p>
+          <div id="helpGestureRows"></div>
 
           <h3>Right Hand</h3>
           <p>

@@ -14,11 +14,12 @@ import { defineUserSample, defineUserWavetable } from "./audio/user-voices";
 import { listVoices, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
 import type { VoiceDefinition, VoiceKind } from "./audio/voice";
 import { DEFAULT_VOICE_ID } from "./audio/voices";
-import { PROJECT_NAME } from "./config/constants";
+import { GESTURE_MAP_STORAGE_KEY, PROJECT_NAME } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
+import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
 import { ChordStabilizer } from "./music/stabilizer";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
-import type { ChordNumeral, ChordState, Hand, Handedness, KeyName } from "./types";
+import type { ChordNumeral, ChordState, GestureMap, Hand, Handedness, KeyName } from "./types";
 import { getAppElements, resizeCanvasToWindow } from "./ui/dom";
 import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
@@ -49,6 +50,7 @@ export class GestureSynthApp {
   private readonly stabilizer = new ChordStabilizer();
   private readonly hud: Hud;
   private readonly guide: GestureGuide;
+  private readonly help: HelpModal;
 
   /** Most recent landmarks per hand, carried between animation frames. */
   private readonly hands: Record<Handedness, Hand | null> = { Left: null, Right: null };
@@ -57,6 +59,7 @@ export class GestureSynthApp {
 
   private tonicFrequency: number;
   private keyName: KeyName;
+  private gestureMap: GestureMap;
 
   constructor() {
     this.els = getAppElements();
@@ -72,9 +75,18 @@ export class GestureSynthApp {
 
     this.guide = new GestureGuide(this.els.gestureGuide, this.els.guideToggle);
 
+    this.help = new HelpModal(
+      this.els.helpModal,
+      this.els.helpButton,
+      this.els.closeHelp,
+      this.els.helpGestureRows,
+    );
+
     this.tonicFrequency = Number(this.els.keySelect.value);
     this.keyName = readKeyName(this.els.keySelect);
+    this.gestureMap = getGestureMap(this.readStoredGestureMapId());
     this.renderInstruments(DEFAULT_VOICE_ID);
+    this.renderGestureMaps();
   }
 
   /**
@@ -86,7 +98,8 @@ export class GestureSynthApp {
   async start(): Promise<void> {
     this.wireOverlays();
     this.bindControls();
-    this.guide.render(this.keyName);
+    this.guide.render(this.keyName, this.gestureMap);
+    this.help.render(this.gestureMap);
     this.synth.setInstrument(this.els.instrumentSelect.value);
 
     await startCamera(this.els.video);
@@ -100,16 +113,18 @@ export class GestureSynthApp {
   /** Constructs the components that own their own event handling. */
   private wireOverlays(): void {
     new StartOverlay(this.els.startOverlay, this.els.canvas, () => this.synth.ensureContext());
-
-    new HelpModal(this.els.helpModal, this.els.helpButton, this.els.closeHelp);
   }
 
-  /** Wires the key, instrument, and instrument-loading controls. */
+  /** Wires the key, gesture-map, instrument, and instrument-loading controls. */
   private bindControls(): void {
     this.els.keySelect.addEventListener("change", () => {
       this.tonicFrequency = Number(this.els.keySelect.value);
       this.keyName = readKeyName(this.els.keySelect);
-      this.guide.render(this.keyName);
+      this.guide.render(this.keyName, this.gestureMap);
+    });
+
+    this.els.gestureMapSelect.addEventListener("change", () => {
+      this.setGestureMap(this.els.gestureMapSelect.value);
     });
 
     this.els.instrumentSelect.addEventListener("change", () => {
@@ -193,6 +208,55 @@ export class GestureSynthApp {
     }
 
     select.value = selectedId;
+  }
+
+  /** Switches the gesture vocabulary and keeps the readouts in step. */
+  private setGestureMap(id: string): void {
+    this.gestureMap = getGestureMap(id);
+    this.els.gestureMapSelect.value = this.gestureMap.id;
+    this.storeGestureMapId(this.gestureMap.id);
+    this.guide.render(this.keyName, this.gestureMap);
+    this.help.render(this.gestureMap);
+  }
+
+  /**
+   * Fills the gesture-map picker from the presets.
+   *
+   * Like the instrument picker, this reads the preset list rather than a
+   * hardcoded set of options, so a new map appears the moment it is declared.
+   */
+  private renderGestureMaps(): void {
+    const select = this.els.gestureMapSelect;
+
+    select.replaceChildren(
+      ...GESTURE_MAPS.map((map) => {
+        const option = document.createElement("option");
+        option.value = map.id;
+        option.textContent = map.label;
+        option.title = map.description;
+        return option;
+      }),
+    );
+
+    select.value = this.gestureMap.id;
+  }
+
+  /** Reads the remembered map id, or the default when storage is unavailable. */
+  private readStoredGestureMapId(): string {
+    try {
+      return window.localStorage.getItem(GESTURE_MAP_STORAGE_KEY) ?? DEFAULT_GESTURE_MAP_ID;
+    } catch {
+      return DEFAULT_GESTURE_MAP_ID;
+    }
+  }
+
+  /** Remembers the chosen map. Storage can be disabled; the choice just will not stick. */
+  private storeGestureMapId(id: string): void {
+    try {
+      window.localStorage.setItem(GESTURE_MAP_STORAGE_KEY, id);
+    } catch {
+      // Private mode and blocked cookies both throw here; nothing to do.
+    }
   }
 
   /**
@@ -304,7 +368,7 @@ export class GestureSynthApp {
     if (left) {
       const leftTilt = getHandHorizontalTilt(left, "Left");
 
-      chord = classifyChord(left, "Left");
+      chord = classifyChord(left, "Left", this.gestureMap);
       isMajorMode = leftTilt >= 0;
     }
 

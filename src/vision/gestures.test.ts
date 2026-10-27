@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { FingerName, Hand } from "../types";
+import { CLASSIC_GESTURE_MAP, TRIAD_GESTURE_MAP } from "../music/gesture-map";
+import type { ChordNumeral, FingerName, GestureMap, Hand, HandShape } from "../types";
 import {
   classifyChord,
   getChordQuality,
@@ -8,6 +9,7 @@ import {
   getVolumeFromHeight,
   isFingerExtended,
   isThumbExtended,
+  readHandShape,
 } from "./gestures";
 
 const FINGER_JOINTS: Record<FingerName, { pip: number; tip: number }> = {
@@ -102,21 +104,21 @@ describe("getChordQuality", () => {
 
 describe("classifyChord", () => {
   it("returns null when no fingers are extended", () => {
-    expect(classifyChord(makeHand(), "Left")).toBeNull();
+    expect(classifyChord(makeHand(), "Left", CLASSIC_GESTURE_MAP)).toBeNull();
   });
 
   it("maps one finger to the tonic", () => {
     const hand = makeHand();
     setFinger(hand, "index", true);
     setQuality(hand, "major");
-    expect(classifyChord(hand, "Left")).toBe("I");
+    expect(classifyChord(hand, "Left", CLASSIC_GESTURE_MAP)).toBe("I");
   });
 
   it("lower-cases the numeral for a minor reading", () => {
     const hand = makeHand();
     setFinger(hand, "index", true);
     setQuality(hand, "minor");
-    expect(classifyChord(hand, "Left")).toBe("i");
+    expect(classifyChord(hand, "Left", CLASSIC_GESTURE_MAP)).toBe("i");
   });
 
   it("maps five extended fingers to the dominant", () => {
@@ -126,7 +128,7 @@ describe("classifyChord", () => {
     );
     setThumb(hand, "Left", true);
     setQuality(hand, "major");
-    expect(classifyChord(hand, "Left")).toBe("V");
+    expect(classifyChord(hand, "Left", CLASSIC_GESTURE_MAP)).toBe("V");
   });
 
   it("maps the rock sign to the submediant", () => {
@@ -134,7 +136,7 @@ describe("classifyChord", () => {
     setFinger(hand, "index", true);
     setFinger(hand, "pinky", true);
     setQuality(hand, "major");
-    expect(classifyChord(hand, "Left")).toBe("VI");
+    expect(classifyChord(hand, "Left", CLASSIC_GESTURE_MAP)).toBe("VI");
   });
 
   it("maps the rock sign with a thumb to the leading tone", () => {
@@ -143,7 +145,7 @@ describe("classifyChord", () => {
     setFinger(hand, "pinky", true);
     setThumb(hand, "Left", true);
     setQuality(hand, "major");
-    expect(classifyChord(hand, "Left")).toBe("VII");
+    expect(classifyChord(hand, "Left", CLASSIC_GESTURE_MAP)).toBe("VII");
   });
 
   it("carries the minor mode through the rock sign", () => {
@@ -151,7 +153,74 @@ describe("classifyChord", () => {
     setFinger(hand, "index", true);
     setFinger(hand, "pinky", true);
     setQuality(hand, "minor");
-    expect(classifyChord(hand, "Left")).toBe("vi");
+    expect(classifyChord(hand, "Left", CLASSIC_GESTURE_MAP)).toBe("vi");
+  });
+
+  it("looks the shape up in the injected map, not a built-in table", () => {
+    const hand = makeHand();
+    setQuality(hand, "major");
+
+    // The rock sign is VI under Classic, but only two fingers under Triad.
+    setFinger(hand, "index", true);
+    setFinger(hand, "pinky", true);
+    expect(classifyChord(hand, "Left", CLASSIC_GESTURE_MAP)).toBe("VI");
+    expect(classifyChord(hand, "Left", TRIAD_GESTURE_MAP)).toBe("IV");
+  });
+
+  it("plays nothing for a shape the map leaves out", () => {
+    const hand = makeHand();
+    (["index", "middle", "ring", "pinky"] as FingerName[]).forEach((finger) =>
+      setFinger(hand, finger, true),
+    );
+    setThumb(hand, "Left", true);
+
+    // Five fingers is V under Classic, but Triad stops at three.
+    expect(classifyChord(hand, "Left", CLASSIC_GESTURE_MAP)).toBe("V");
+    expect(classifyChord(hand, "Left", TRIAD_GESTURE_MAP)).toBeNull();
+  });
+
+  it("keeps the map's own case when tilt does not pick the mode", () => {
+    const hand = makeHand();
+    setFinger(hand, "index", true);
+    setQuality(hand, "major");
+
+    const fixedMinor: GestureMap = {
+      id: "fixed-minor",
+      label: "Fixed minor",
+      description: "A map that always plays a minor tonic.",
+      shapes: new Map<HandShape, ChordNumeral | null>([[2, "i"]]),
+      tiltPicksMode: false,
+    };
+
+    // The hand reads major, but a map with `tiltPicksMode: false` ignores that.
+    expect(classifyChord(hand, "Left", fixedMinor)).toBe("i");
+  });
+});
+
+describe("readHandShape", () => {
+  it("is zero for a closed hand", () => {
+    expect(readHandShape(makeHand(), "Left")).toBe(0);
+  });
+
+  it("sets only the index bit for a single extended finger", () => {
+    const hand = makeHand();
+    setFinger(hand, "index", true);
+    expect(readHandShape(hand, "Left")).toBe(2);
+  });
+
+  it("sets the thumb bit from the handedness-aware reading", () => {
+    const hand = makeHand();
+    setThumb(hand, "Left", true);
+    expect(readHandShape(hand, "Left")).toBe(1);
+  });
+
+  it("sets every bit for an open hand", () => {
+    const hand = makeHand();
+    (["index", "middle", "ring", "pinky"] as FingerName[]).forEach((finger) =>
+      setFinger(hand, finger, true),
+    );
+    setThumb(hand, "Left", true);
+    expect(readHandShape(hand, "Left")).toBe(31);
   });
 });
 

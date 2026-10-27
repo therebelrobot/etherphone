@@ -1,20 +1,14 @@
 /**
- * The on-screen cheat sheet: one row per scale degree, showing the note name in
- * the current key and the hand shape that selects it.
+ * The on-screen cheat sheet: one row per scale degree the active gesture map can
+ * reach, showing the note name in the current key and the hand shape that
+ * selects it.
+ *
+ * It renders from the map rather than a fixed list, so it cannot drift from the
+ * instrument: a map with three chords gets three rows.
  */
 import { MAJOR_SCALE } from "../config/music";
-import type { KeyName } from "../types";
-
-/** Scale degree paired with the emoji that depicts it. */
-const GESTURE_ROWS = [
-  { degree: 1, gesture: "1️⃣" },
-  { degree: 2, gesture: "2️⃣" },
-  { degree: 3, gesture: "3️⃣" },
-  { degree: 4, gesture: "4️⃣" },
-  { degree: 5, gesture: "5️⃣" },
-  { degree: 6, gesture: "🤘" },
-  { degree: 7, gesture: "🤟" },
-] as const;
+import { describeShape, getGestureRows } from "../music/gesture-map";
+import type { GestureMap, KeyName } from "../types";
 
 export class GestureGuide {
   constructor(
@@ -24,23 +18,25 @@ export class GestureGuide {
     this.toggle.addEventListener("click", () => this.toggleVisibility());
   }
 
-  /** Re-renders the rows against a key's scale. */
-  render(keyName: KeyName): void {
+  /** Re-renders the rows for a key's scale and the map that is in play. */
+  render(keyName: KeyName, map: GestureMap): void {
     const scale = MAJOR_SCALE[keyName];
 
-    this.root.innerHTML = GESTURE_ROWS.map(
-      ({ degree, gesture }) => `
+    this.root.innerHTML = getGestureRows(map)
+      .map(
+        ({ degree, shape }) => `
       <div class="gesture-guide-row">
         <span class="gesture-guide-note">
           ${scale[degree - 1]}
         </span>
 
         <span class="gesture-guide-gesture">
-          ${gesture}
+          ${describeShape(shape)}
         </span>
       </div>
     `,
-    ).join("");
+      )
+      .join("");
   }
 
   private toggleVisibility(): void {
