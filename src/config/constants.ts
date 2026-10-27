@@ -69,6 +69,9 @@ export const GESTURE_MAP_STORAGE_KEY = "etherphone.gesture-map";
 export const MODE_STORAGE_KEY = "etherphone.mode";
 export const MONO_STYLE_STORAGE_KEY = "etherphone.mono-style";
 
+/** Where one-handed menu staging is remembered between visits. */
+export const SINGLE_HANDED_STORAGE_KEY = "etherphone.single-handed";
+
 /**
  * The gesture menu.
  *
@@ -108,6 +111,22 @@ export const CONTROL = {
    * past its resting spot and settles back onto it.
    */
   fanOvershoot: 1.7,
+
+  /**
+   * A list menu's rows.
+   *
+   * Lists hold the settings with too many values for a ring — twelve keys, every
+   * instrument — so the rows share a tall vertical band and the hand's height
+   * picks one directly, which is easier to read and to hit than a crowded circle.
+   */
+  listTopFraction: 0.14,
+  listBottomFraction: 0.86,
+  /** A row never gets taller than this, so a short list does not sprawl. */
+  listMaxRowHeight: 54,
+  /** Delay between consecutive rows arriving (ms). Shorter than the ring's, because there are more of them. */
+  listStaggerMs: 22,
+  /** How wide a list row is drawn, before it is capped to the canvas. */
+  listRowWidth: 380,
   /** How long the menu stays open with the cursor off every option (ms). */
   idleTimeoutMs: 5000,
   /** Distance from the menu's centre to an option, in canvas pixels. */

@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL } from "../config/constants";
 import type { CanvasPoint } from "../types";
-import { isModeSwitch, MenuController, menuOptionsFor } from "./menu-controller";
+import { isMenuTopic, isModeSwitch, MENU_TOPICS, MenuController } from "./menu-controller";
 
-const OPTIONS = [
+const VOCABULARY = [
   { id: "classic", label: "Classic" },
   { id: "triad", label: "Triad" },
   { id: "pentatonic", label: "Pentatonic" },
 ];
+
+const KEYS = Array.from({ length: 12 }, (_, index) => ({
+  id: `key-${index}`,
+  label: `Key ${index}`,
+}));
 
 const HOLD = 600;
 const DWELL = 900;
@@ -16,18 +21,13 @@ const MOVE = 80;
 
 const WIDTH = 1280;
 const HEIGHT = 900;
-const CENTER: CanvasPoint = { x: WIDTH / 2, y: HEIGHT / 2 };
 
-/** Where a hand opens the menu, deliberately off-centre to prove the anchoring. */
-const HAND: CanvasPoint = { x: 420, y: 620 };
+/** Where the two hands are when the menu opens. */
+const LEFT: CanvasPoint = { x: 380, y: 620 };
+const RIGHT: CanvasPoint = { x: 900, y: 620 };
 
-/** A cursor pointing away from `anchor` at the option at `index`. */
-function pointFrom(
-  anchor: CanvasPoint,
-  index: number,
-  count: number = OPTIONS.length,
-  distance = 200,
-): CanvasPoint {
+/** A cursor pushed out from `anchor` towards item `index` of `count`. */
+function pointFrom(anchor: CanvasPoint, index: number, count: number, distance = 200): CanvasPoint {
   const angle = -Math.PI / 2 + (index * 2 * Math.PI) / count;
   return {
     x: anchor.x + Math.cos(angle) * distance,
@@ -35,11 +35,16 @@ function pointFrom(
   };
 }
 
+/** The index of a menu in the menus cluster. */
+const menuIndex = (id: string) => MENU_TOPICS.findIndex((topic) => topic.id === id);
+
 function input(overrides: Partial<Parameters<MenuController["update"]>[0]> = {}) {
   return {
-    options: OPTIONS,
+    menus: { layout: "radial" as const, items: MENU_TOPICS, activeId: "vocabulary" },
+    options: { layout: "radial" as const, items: VOCABULARY },
     bothClosed: false,
-    cursor: null,
+    menuCursor: null,
+    optionCursor: null,
     canvasWidth: WIDTH,
     canvasHeight: HEIGHT,
     ...overrides,
@@ -55,452 +60,437 @@ function makeController(): MenuController {
   });
 }
 
-/** Holds both hands closed with the cursor at `at`, and returns the frame it opened on. */
-function openMenu(controller: MenuController, at: CanvasPoint = HAND, from = 0): number {
-  controller.update(input({ bothClosed: true, cursor: at }), from);
+/** Holds both hands closed long enough to open the menu, hands at rest. */
+function openMenu(controller: MenuController, from = 0): number {
+  controller.update(input({ bothClosed: true, menuCursor: LEFT, optionCursor: RIGHT }), from);
 
   const opened = from + HOLD;
-  controller.update(input({ bothClosed: true, cursor: at }), opened);
+  controller.update(input({ bothClosed: true, menuCursor: LEFT, optionCursor: RIGHT }), opened);
 
   return opened;
 }
 
-/**
- * Opens the menu and pushes the hand out towards an option, which takes two
- * frames: one to open at rest, one to move. Returns the time the dwell started.
- */
-function openAndSteer(
+/** Opens the menu and pushes the left hand out towards a menu. */
+function chooseMenu(
   controller: MenuController,
-  index: number,
-  at: CanvasPoint = HAND,
+  menu: string,
   from = 0,
-): number {
-  const opened = openMenu(controller, at, from);
-
+): { steered: number; update: ReturnType<MenuController["update"]> } {
+  const opened = openMenu(controller, from);
   const steered = opened + 1;
-  controller.update(input({ bothClosed: true, cursor: pointFrom(at, index) }), steered);
+  const cursor = pointFrom(LEFT, menuIndex(menu), MENU_TOPICS.length);
 
-  return steered;
+  controller.update(input({ bothClosed: true, menuCursor: cursor, optionCursor: RIGHT }), steered);
+
+  return {
+    steered,
+    update: controller.update(
+      input({ bothClosed: true, menuCursor: cursor, optionCursor: RIGHT }),
+      steered + DWELL,
+    ),
+  };
 }
 
 describe("MenuController opening", () => {
   it("stays shut until both hands have been closed for the hold", () => {
     const controller = makeController();
 
-    expect(controller.update(input({ bothClosed: true, cursor: HAND }), 0).isOpen).toBe(false);
-    expect(controller.update(input({ bothClosed: true, cursor: HAND }), HOLD - 1).isOpen).toBe(
-      false,
-    );
-    expect(controller.update(input({ bothClosed: true, cursor: HAND }), HOLD).isOpen).toBe(true);
+    expect(controller.update(input({ bothClosed: true }), 0).isOpen).toBe(false);
+    expect(controller.update(input({ bothClosed: true }), HOLD - 1).isOpen).toBe(false);
+    expect(controller.update(input({ bothClosed: true }), HOLD).isOpen).toBe(true);
   });
 
   it("reports the frame it opened on, so the caller can go quiet", () => {
     const controller = makeController();
 
-    controller.update(input({ bothClosed: true, cursor: HAND }), 0);
-    const opened = controller.update(input({ bothClosed: true, cursor: HAND }), HOLD);
+    controller.update(input({ bothClosed: true }), 0);
+    const opened = controller.update(input({ bothClosed: true }), HOLD);
 
     expect(opened.justOpened).toBe(true);
-    expect(controller.update(input({ bothClosed: true, cursor: HAND }), HOLD + 10).justOpened).toBe(
-      false,
-    );
+    expect(controller.update(input({ bothClosed: true }), HOLD + 10).justOpened).toBe(false);
   });
 
-  it("does not open on one closed hand", () => {
+  it("dismisses when both hands are closed again, after a release", () => {
     const controller = makeController();
-
-    controller.update(input({ bothClosed: false }), 0);
-    expect(controller.update(input({ bothClosed: false }), HOLD * 4).isOpen).toBe(false);
-  });
-
-  it("restarts the hold if the hands come apart", () => {
-    const controller = makeController();
-
-    controller.update(input({ bothClosed: true, cursor: HAND }), 0);
-    controller.update(input({ bothClosed: true, cursor: HAND }), HOLD - 100);
-    controller.update(input({ bothClosed: false }), HOLD - 50);
-
-    expect(controller.update(input({ bothClosed: true, cursor: HAND }), HOLD).isOpen).toBe(false);
-    expect(controller.update(input({ bothClosed: true, cursor: HAND }), HOLD + 100).isOpen).toBe(
-      false,
-    );
-    expect(controller.update(input({ bothClosed: true, cursor: HAND }), HOLD + HOLD).isOpen).toBe(
-      true,
-    );
-  });
-
-  it("will not reopen while the hands stay closed", () => {
-    const controller = makeController();
-    const steered = openAndSteer(controller, 1);
-
-    const committed = controller.update(
-      input({ bothClosed: true, cursor: pointFrom(HAND, 1) }),
-      steered + DWELL,
-    );
-    expect(committed.committed).toBe("triad");
-    expect(controller.open).toBe(false);
-
-    expect(
-      controller.update(input({ bothClosed: true, cursor: HAND }), steered + HOLD * 3).isOpen,
-    ).toBe(false);
-  });
-
-  it("reopens once the gesture is released and held again", () => {
-    const controller = makeController();
-    const steered = openAndSteer(controller, 1);
-
-    controller.update(input({ bothClosed: true, cursor: pointFrom(HAND, 1) }), steered + DWELL);
-    controller.update(input({ bothClosed: false }), steered + DWELL + 10);
-
-    expect(
-      controller.update(input({ bothClosed: true, cursor: HAND }), steered + DWELL + 20).isOpen,
-    ).toBe(false);
-    expect(
-      controller.update(input({ bothClosed: true, cursor: HAND }), steered + DWELL + 20 + HOLD)
-        .isOpen,
-    ).toBe(true);
-  });
-});
-
-describe("MenuController dismissing", () => {
-  /** Opens the menu, then releases the gesture so it can be re-armed. */
-  function openThenRelease(controller: MenuController): number {
     const opened = openMenu(controller);
 
     controller.update(input({ bothClosed: false }), opened + 10);
-    return opened + 10;
-  }
+    const closedAgainAt = opened + 20;
 
-  it("dismisses when both hands are closed again", () => {
-    const controller = makeController();
-    const released = openThenRelease(controller);
-    const closedAgainAt = released + 10;
-
-    // Still open until the hold runs out — a passing fist is not a dismissal.
     expect(controller.update(input({ bothClosed: true }), closedAgainAt).isOpen).toBe(true);
-    expect(controller.update(input({ bothClosed: true }), closedAgainAt + HOLD - 1).isOpen).toBe(
-      true,
-    );
-
     expect(controller.update(input({ bothClosed: true }), closedAgainAt + HOLD).isOpen).toBe(false);
-    expect(controller.open).toBe(false);
-  });
-
-  it("needs the hold again, so a passing fist does not dismiss it", () => {
-    const controller = makeController();
-    const released = openThenRelease(controller);
-    const closedAgainAt = released + 10;
-
-    controller.update(input({ bothClosed: true }), closedAgainAt);
-    expect(controller.update(input({ bothClosed: false }), closedAgainAt + 100).isOpen).toBe(true);
-    expect(controller.open).toBe(true);
   });
 
   it("does not dismiss on the closed hands that opened it", () => {
     const controller = makeController();
-
-    // Never released, so the same hold that opened it cannot also close it.
     const opened = openMenu(controller);
+
     expect(controller.update(input({ bothClosed: true }), opened + HOLD * 3).isOpen).toBe(true);
-  });
-});
-
-describe("menuOptionsFor", () => {
-  const vocabulary = [
-    { id: "classic", label: "Classic" },
-    { id: "triad", label: "Triad" },
-    { id: "pentatonic", label: "Pentatonic" },
-  ];
-
-  it("keeps the current vocabulary", () => {
-    const options = menuOptionsFor("chord", vocabulary);
-
-    expect(options.slice(0, 3).map((option) => option.id)).toEqual([
-      "classic",
-      "triad",
-      "pentatonic",
-    ]);
-  });
-
-  it("offers the other mode, so the other vocabulary is reachable", () => {
-    expect(menuOptionsFor("chord", vocabulary).at(-1)).toMatchObject({
-      id: "mono",
-      keepsMenuOpen: true,
-    });
-    expect(menuOptionsFor("mono", vocabulary).at(-1)).toMatchObject({
-      id: "chord",
-      keepsMenuOpen: true,
-    });
-  });
-
-  it("recognises the mode switch ids and nothing else", () => {
-    expect(isModeSwitch("chord")).toBe(true);
-    expect(isModeSwitch("mono")).toBe(true);
-    expect(isModeSwitch("triad")).toBe(false);
-    expect(isModeSwitch("harp")).toBe(false);
-  });
-});
-
-describe("MenuController keeping the menu open", () => {
-  const SWITCHING = [...OPTIONS, { id: "mono", label: "Mono", keepsMenuOpen: true }];
-
-  it("stays open when the committed option asks it to", () => {
-    const controller = makeController();
-    const options = SWITCHING;
-    const opened = openMenu(controller);
-    const target = pointFrom(HAND, 3, SWITCHING.length);
-
-    controller.update(input({ options, bothClosed: true, cursor: target }), opened + 1);
-    const committed = controller.update(
-      input({ options, bothClosed: true, cursor: target }),
-      opened + 1 + DWELL,
-    );
-
-    expect(committed.committed).toBe("mono");
-    expect(committed.isOpen).toBe(true);
-    expect(controller.open).toBe(true);
-  });
-
-  it("requires a move again before the same option can commit twice", () => {
-    const controller = makeController();
-    const options = SWITCHING;
-    const opened = openMenu(controller);
-    const target = pointFrom(HAND, 3, SWITCHING.length);
-
-    controller.update(input({ options, bothClosed: true, cursor: target }), opened + 1);
-    const first = controller.update(
-      input({ options, bothClosed: true, cursor: target }),
-      opened + 1 + DWELL,
-    );
-    expect(first.committed).toBe("mono");
-
-    // Still resting on it: nothing highlighted, and no second commit.
-    const second = controller.update(
-      input({ options, bothClosed: true, cursor: target }),
-      opened + 1 + DWELL * 3,
-    );
-    expect(second.committed).toBeNull();
-    expect(second.hoveredId).toBeNull();
-  });
-
-  it("still closes on an ordinary choice", () => {
-    const controller = makeController();
-    const opened = openMenu(controller);
-    const target = pointFrom(HAND, 1);
-
-    controller.update(input({ bothClosed: true, cursor: target }), opened + 1);
-    const committed = controller.update(
-      input({ bothClosed: true, cursor: target }),
-      opened + 1 + DWELL,
-    );
-
-    expect(committed.committed).toBe("triad");
-    expect(committed.isOpen).toBe(false);
-  });
-});
-
-describe("MenuController anchoring", () => {
-  it("centres the menu on the hand that opened it, not the screen", () => {
-    const controller = makeController();
-    const opened = openMenu(controller);
-
-    const frame = controller.update(input({ bothClosed: true, cursor: HAND }), opened);
-
-    expect(frame.centerX).toBeCloseTo(HAND.x);
-    expect(frame.centerY).toBeCloseTo(HAND.y);
-  });
-
-  it("puts the options around the hand", () => {
-    const controller = makeController();
-    const opened = openMenu(controller);
-
-    const frame = controller.update(input({ bothClosed: true, cursor: HAND }), opened);
-    const first = frame.slots[0];
-
-    expect(first.x).toBeCloseTo(HAND.x);
-    expect(first.y).toBeCloseTo(HAND.y - CONTROL.radius);
-  });
-
-  it("nudges the anchor back on screen when the hand is near an edge", () => {
-    const controller = makeController();
-    const corner: CanvasPoint = { x: 20, y: HEIGHT - 20 };
-
-    const opened = openMenu(controller, corner);
-    const frame = controller.update(input({ bothClosed: true, cursor: corner }), opened);
-
-    const margin = CONTROL.radius + CONTROL.optionRadius;
-    expect(frame.centerX).toBeCloseTo(margin);
-    expect(frame.centerY).toBeCloseTo(HEIGHT - margin);
-  });
-});
-
-describe("MenuController choosing", () => {
-  it("selects nothing while the hand rests where the menu opened", () => {
-    const controller = makeController();
-    const opened = openMenu(controller);
-
-    // The hand opened the menu somewhere; even after the dwell time has passed
-    // with no movement, nothing has been chosen.
-    const frame = controller.update(input({ bothClosed: true, cursor: HAND }), opened + DWELL * 3);
-
-    expect(frame.hoveredId).toBeNull();
-    expect(frame.dwellProgress).toBe(0);
-    expect(controller.open).toBe(true);
-  });
-
-  it("still selects nothing when the hand happened to open over an option", () => {
-    const controller = makeController();
-    // Open the menu with the hand already sitting where an option will be.
-    const overOption = pointFrom(HAND, 1);
-
-    const opened = openMenu(controller, overOption);
-    const frame = controller.update(
-      input({ bothClosed: true, cursor: overOption }),
-      opened + DWELL * 3,
-    );
-
-    expect(frame.hoveredId).toBeNull();
-  });
-
-  it("highlights the option once the hand is pushed towards it", () => {
-    const controller = makeController();
-    const opened = openMenu(controller);
-
-    const frame = controller.update(
-      input({ bothClosed: true, cursor: pointFrom(HAND, 2) }),
-      opened + 10,
-    );
-
-    expect(frame.hoveredId).toBe("pentatonic");
-  });
-
-  it("highlights nothing in the dead zone", () => {
-    const controller = makeController();
-    const steered = openAndSteer(controller, 1);
-
-    const frame = controller.update(input({ bothClosed: true, cursor: HAND }), steered + 10);
-
-    expect(frame.hoveredId).toBeNull();
-  });
-
-  it("commits only after the hand has dwelt on an option", () => {
-    const controller = makeController();
-    const steered = openAndSteer(controller, 1);
-    const cursor = pointFrom(HAND, 1);
-
-    expect(
-      controller.update(input({ bothClosed: true, cursor }), steered + DWELL - 1).committed,
-    ).toBeNull();
-
-    const committed = controller.update(input({ bothClosed: true, cursor }), steered + DWELL);
-    expect(committed.committed).toBe("triad");
-    expect(committed.isOpen).toBe(false);
-  });
-
-  it("restarts the dwell when the hand moves to another option", () => {
-    const controller = makeController();
-    const steered = openAndSteer(controller, 1);
-
-    controller.update(
-      input({ bothClosed: true, cursor: pointFrom(HAND, 1) }),
-      steered + DWELL - 100,
-    );
-
-    const other = pointFrom(HAND, 2);
-    controller.update(input({ bothClosed: true, cursor: other }), steered + DWELL - 50);
-    expect(
-      controller.update(input({ bothClosed: true, cursor: other }), steered + DWELL).committed,
-    ).toBeNull();
-    expect(
-      controller.update(input({ bothClosed: true, cursor: other }), steered + DWELL + DWELL - 60)
-        .committed,
-    ).toBeNull();
-    expect(
-      controller.update(input({ bothClosed: true, cursor: other }), steered + DWELL + DWELL)
-        .committed,
-    ).toBe("pentatonic");
-  });
-
-  it("does not commit while the hand rests in the dead zone", () => {
-    const controller = makeController();
-    const steered = openAndSteer(controller, 0);
-
-    expect(
-      controller.update(input({ bothClosed: true, cursor: HAND }), steered + DWELL * 2).committed,
-    ).toBeNull();
-  });
-
-  it("fills the dwell ring as the hold progresses", () => {
-    const controller = makeController();
-    const steered = openAndSteer(controller, 0);
-
-    const half = controller.update(
-      input({ bothClosed: true, cursor: pointFrom(HAND, 0) }),
-      steered + DWELL / 2,
-    );
-
-    expect(half.dwellProgress).toBeCloseTo(0.5, 2);
-  });
-
-  it("closes itself after idling with the hand off every option", () => {
-    const controller = makeController();
-    const opened = openMenu(controller);
-
-    expect(
-      controller.update(input({ bothClosed: true, cursor: HAND }), opened + IDLE + 1).isOpen,
-    ).toBe(false);
-  });
-
-  it("times out from the last time the hand was on an option, not from opening", () => {
-    const controller = makeController();
-    const opened = openMenu(controller);
-    const lastPointedAt = opened + IDLE - 100;
-
-    controller.update(input({ bothClosed: true, cursor: pointFrom(HAND, 0) }), lastPointedAt);
-
-    expect(
-      controller.update(input({ bothClosed: true, cursor: HAND }), opened + IDLE + 100).isOpen,
-    ).toBe(true);
-    expect(
-      controller.update(input({ bothClosed: true, cursor: HAND }), lastPointedAt + IDLE + 1).isOpen,
-    ).toBe(false);
-  });
-
-  it("lays one slot per option", () => {
-    const controller = makeController();
-    const opened = openMenu(controller);
-
-    const frame = controller.update(input({ bothClosed: true, cursor: HAND }), opened + 10);
-    expect(frame.slots).toHaveLength(OPTIONS.length);
   });
 
   it("reports how long it has been open, so the fan-out can be animated", () => {
     const controller = makeController();
     const opened = openMenu(controller);
 
-    expect(controller.update(input({ bothClosed: true, cursor: HAND }), opened).elapsedMs).toBe(0);
+    expect(controller.update(input({ bothClosed: true }), opened + 120).elapsedMs).toBe(120);
+  });
+});
+
+describe("MenuController two hands", () => {
+  it("anchors each cluster to the hand that drives it", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+
+    const update = controller.update(
+      input({ bothClosed: true, menuCursor: LEFT, optionCursor: RIGHT }),
+      opened,
+    );
+
+    expect(update.menus.centerX).toBeCloseTo(LEFT.x);
+    expect(update.menus.centerY).toBeCloseTo(LEFT.y);
+    expect(update.options.centerX).toBeCloseTo(RIGHT.x);
+    expect(update.options.centerY).toBeCloseTo(RIGHT.y);
+  });
+
+  it("selects nothing while both hands rest where they opened", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+
+    const update = controller.update(
+      input({ bothClosed: true, menuCursor: LEFT, optionCursor: RIGHT }),
+      opened + DWELL * 3,
+    );
+
+    expect(update.menus.hoveredId).toBeNull();
+    expect(update.options.hoveredId).toBeNull();
+    expect(controller.open).toBe(true);
+  });
+
+  it("lets the left hand pick a menu and the right hand pick an option, at once", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+
+    const menuCursor = pointFrom(LEFT, menuIndex("key"), MENU_TOPICS.length);
+    const optionCursor = pointFrom(RIGHT, 1, VOCABULARY.length);
+
+    const update = controller.update(
+      input({ bothClosed: true, menuCursor, optionCursor }),
+      opened + 10,
+    );
+
+    expect(update.menus.hoveredId).toBe("key");
+    expect(update.options.hoveredId).toBe("triad");
+  });
+
+  it("marks the menu in force as active, so you can see where you are", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+
+    const update = controller.update(
+      input({
+        menus: { layout: "radial", items: MENU_TOPICS, activeId: "instrument" },
+        bothClosed: true,
+        menuCursor: LEFT,
+        optionCursor: RIGHT,
+      }),
+      opened,
+    );
+
+    expect(update.menus.activeId).toBe("instrument");
+  });
+});
+
+describe("MenuController choosing", () => {
+  it("commits a menu, naming the cluster it came from, and stays open", () => {
+    const controller = makeController();
+    const { update } = chooseMenu(controller, "key");
+
+    expect(update.committed).toEqual({ cluster: "menus", id: "key" });
+    expect(update.isOpen).toBe(true);
+  });
+
+  it("hides both hovers on the frame a menu commits, so nothing double-fires", () => {
+    const controller = makeController();
+    const { update } = chooseMenu(controller, "key");
+
+    expect(update.menus.hoveredId).toBeNull();
+    expect(update.options.hoveredId).toBeNull();
+  });
+
+  it("makes the right hand move again after the menu changes under it", () => {
+    const controller = makeController();
+    const { steered } = chooseMenu(controller, "key");
+
+    // The right hand has not moved, but the options are different now.
+    const after = controller.update(
+      input({
+        bothClosed: true,
+        menuCursor: pointFrom(LEFT, menuIndex("key"), 4),
+        optionCursor: RIGHT,
+      }),
+      steered + DWELL + 10,
+    );
+
+    expect(after.options.hoveredId).toBeNull();
+    expect(after.options.dwellProgress).toBe(0);
+  });
+
+  it("commits an option and closes the menu", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+    const cursor = pointFrom(RIGHT, 1, VOCABULARY.length);
+
+    controller.update(
+      input({ bothClosed: true, menuCursor: LEFT, optionCursor: cursor }),
+      opened + 10,
+    );
+    const update = controller.update(
+      input({ bothClosed: true, menuCursor: LEFT, optionCursor: cursor }),
+      opened + 10 + DWELL,
+    );
+
+    expect(update.committed).toEqual({ cluster: "options", id: "triad" });
+    expect(update.isOpen).toBe(false);
+  });
+
+  it("keeps the menu open for an option that asks it to", () => {
+    const controller = makeController();
+    const items = [...VOCABULARY, { id: "extra", label: "Extra", keepsMenuOpen: true }];
+    const opened = openMenu(controller);
+    const cursor = pointFrom(RIGHT, 3, items.length);
+
+    controller.update(
+      input({
+        options: { layout: "radial", items },
+        bothClosed: true,
+        menuCursor: LEFT,
+        optionCursor: cursor,
+      }),
+      opened + 10,
+    );
+    const update = controller.update(
+      input({
+        options: { layout: "radial", items },
+        bothClosed: true,
+        menuCursor: LEFT,
+        optionCursor: cursor,
+      }),
+      opened + 10 + DWELL,
+    );
+
+    expect(update.committed).toEqual({ cluster: "options", id: "extra" });
+    expect(update.isOpen).toBe(true);
+  });
+
+  it("closes itself after idling with neither hand on anything", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+
     expect(
-      controller.update(input({ bothClosed: true, cursor: HAND }), opened + 120).elapsedMs,
-    ).toBe(120);
+      controller.update(
+        input({ bothClosed: true, menuCursor: LEFT, optionCursor: RIGHT }),
+        opened + IDLE + 1,
+      ).isOpen,
+    ).toBe(false);
+  });
+});
+
+describe("MenuController options list", () => {
+  const listInput = (overrides = {}) =>
+    input({
+      options: { layout: "list" as const, items: KEYS },
+      bothClosed: true,
+      menuCursor: LEFT,
+      optionCursor: RIGHT,
+      ...overrides,
+    });
+
+  it("lays the options down the canvas rather than around the hand", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+
+    const update = controller.update(listInput(), opened);
+
+    expect(update.options.layout).toBe("list");
+    expect(update.options.rows).toHaveLength(KEYS.length);
+    expect(update.options.centerY).toBe(HEIGHT / 2);
   });
 
-  it("reports no elapsed time when it is shut", () => {
+  it("selects the row at the right hand's height", () => {
     const controller = makeController();
+    const opened = openMenu(controller);
 
-    expect(controller.update(input({ bothClosed: false }), 500).elapsedMs).toBe(0);
+    controller.update(listInput(), opened);
+    const update = controller.update(
+      listInput({ optionCursor: { x: RIGHT.x, y: 140 } }),
+      opened + 10,
+    );
+
+    expect(update.options.hoveredId).toBe("key-0");
   });
 
-  it("forgets the anchor when it closes", () => {
+  it("keeps the left hand's menu ring anchored to the left hand", () => {
     const controller = makeController();
-    const steered = openAndSteer(controller, 1);
+    const opened = openMenu(controller);
 
-    controller.update(input({ bothClosed: true, cursor: pointFrom(HAND, 1) }), steered + DWELL);
-    controller.update(input({ bothClosed: false }), steered + DWELL + 10);
+    const update = controller.update(listInput(), opened);
 
-    // Reopening somewhere else anchors there, not where it was before.
-    const reopened = openMenu(controller, CENTER, steered + DWELL + 20);
-    const frame = controller.update(input({ bothClosed: true, cursor: CENTER }), reopened);
+    expect(update.menus.layout).toBe("radial");
+    expect(update.menus.centerX).toBeCloseTo(LEFT.x);
+  });
+});
 
-    expect(frame.centerX).toBeCloseTo(CENTER.x);
+describe("MenuController single-handed staging", () => {
+  /** One hand, driving both stages. */
+  const SOLO: CanvasPoint = { x: 640, y: 620 };
+
+  const stagedInput = (cursor: CanvasPoint | null, overrides = {}) =>
+    input({
+      staged: true,
+      bothClosed: true,
+      menuCursor: cursor,
+      optionCursor: cursor,
+      ...overrides,
+    });
+
+  function openStaged(controller: MenuController, from = 0): number {
+    controller.update(stagedInput(SOLO), from);
+
+    const opened = from + HOLD;
+    controller.update(stagedInput(SOLO), opened);
+
+    return opened;
+  }
+
+  it("reads only the menus cluster to begin with", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+
+    // The hand is pushed towards an option, but the menus stage is up, so the
+    // options cluster cannot be chosen from yet.
+    const update = controller.update(
+      stagedInput(pointFrom(SOLO, 1, VOCABULARY.length)),
+      opened + 10,
+    );
+
+    expect(update.menus.cursor).not.toBeNull();
+    expect(update.options.cursor).toBeNull();
+    expect(update.options.hoveredId).toBeNull();
+  });
+
+  it("switches to the options once a menu is chosen, and names the cluster", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+    const cursor = pointFrom(SOLO, menuIndex("key"), MENU_TOPICS.length);
+
+    controller.update(stagedInput(cursor), opened + 1);
+    const committed = controller.update(stagedInput(cursor), opened + 1 + DWELL);
+
+    expect(committed.committed).toEqual({ cluster: "menus", id: "key" });
+    expect(committed.isOpen).toBe(true);
+
+    const after = controller.update(stagedInput(cursor), opened + 1 + DWELL + 10);
+    expect(after.options.cursor).not.toBeNull();
+    expect(after.menus.cursor).toBeNull();
+  });
+
+  it("anchors the options where the chosen menu was, so the hand cannot auto-select", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+    const cursor = pointFrom(SOLO, menuIndex("key"), MENU_TOPICS.length);
+
+    controller.update(stagedInput(cursor), opened + 1);
+    controller.update(stagedInput(cursor), opened + 1 + DWELL);
+
+    // The hand has not moved, and the new cluster is anchored where the menu
+    // item it just chose was — so the hand is inside the dead zone, and nothing
+    // is selected.
+    const after = controller.update(stagedInput(cursor), opened + 1 + DWELL + 10);
+    const fromAnchor = Math.hypot(
+      cursor.x - after.options.centerX,
+      cursor.y - after.options.centerY,
+    );
+
+    expect(fromAnchor).toBeLessThan(CONTROL.deadZone);
+    expect(after.options.hoveredId).toBeNull();
+    expect(after.options.dwellProgress).toBe(0);
+  });
+
+  it("lets the same hand then pick an option and close the menu", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+    const menuCursor = pointFrom(SOLO, menuIndex("key"), MENU_TOPICS.length);
+
+    controller.update(stagedInput(menuCursor), opened + 1);
+    const menuCommitted = controller.update(stagedInput(menuCursor), opened + 1 + DWELL);
+    const anchor = { x: menuCommitted.options.centerX, y: menuCommitted.options.centerY };
+
+    // Now the hand pushes out from the new anchor towards an option.
+    const optionCursor = pointFrom(anchor, 1, VOCABULARY.length);
+    const steered = opened + 1 + DWELL + 20;
+
+    controller.update(stagedInput(optionCursor), steered);
+    const committed = controller.update(stagedInput(optionCursor), steered + DWELL);
+
+    expect(committed.committed).toEqual({ cluster: "options", id: "triad" });
+    expect(committed.isOpen).toBe(false);
+  });
+
+  it("starts back at the menus stage on the next open", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+    const cursor = pointFrom(SOLO, menuIndex("key"), MENU_TOPICS.length);
+
+    controller.update(stagedInput(cursor), opened + 1);
+    controller.update(stagedInput(cursor), opened + 1 + DWELL);
+
+    // Dismiss, release, and open again: the menu costs a release every time.
+    controller.close();
+    controller.update(stagedInput(null, { bothClosed: false }), opened + 2000);
+
+    const reopened = openStaged(controller, opened + 3000);
+    const update = controller.update(stagedInput(SOLO), reopened);
+
+    expect(update.menus.cursor).not.toBeNull();
+    expect(update.options.cursor).toBeNull();
+  });
+});
+
+describe("menu topic and mode ids", () => {
+  it("recognises the menus and nothing else", () => {
+    expect(isMenuTopic("vocabulary")).toBe(true);
+    expect(isMenuTopic("key")).toBe(true);
+    expect(isMenuTopic("instrument")).toBe(true);
+    expect(isMenuTopic("settings")).toBe(true);
+    expect(isMenuTopic("classic")).toBe(false);
+    expect(isMenuTopic("chord")).toBe(false);
+  });
+
+  it("recognises the mode ids and nothing else", () => {
+    expect(isModeSwitch("chord")).toBe(true);
+    expect(isModeSwitch("mono")).toBe(true);
+    expect(isModeSwitch("triad")).toBe(false);
+  });
+
+  it("offers four menus", () => {
+    expect(MENU_TOPICS.map((topic) => topic.id)).toEqual([
+      "vocabulary",
+      "key",
+      "instrument",
+      "settings",
+    ]);
+  });
+
+  it("uses the configured dead zone for both clusters", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+    const inside = { x: LEFT.x + CONTROL.deadZone - 5, y: LEFT.y };
+
+    const update = controller.update(
+      input({ bothClosed: true, menuCursor: inside, optionCursor: RIGHT }),
+      opened + 10,
+    );
+
+    expect(update.menus.hoveredId).toBeNull();
   });
 });

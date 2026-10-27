@@ -19,6 +19,7 @@ import {
   MODE_STORAGE_KEY,
   MONO_STYLE_STORAGE_KEY,
   PROJECT_NAME,
+  SINGLE_HANDED_STORAGE_KEY,
 } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
@@ -41,9 +42,10 @@ import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
 import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
-import { MenuController, isModeSwitch, menuOptionsFor } from "./ui/menu-controller";
-import { drawRadialMenu } from "./ui/radial-menu";
-import type { MenuOption } from "./ui/radial-menu";
+import { MENU_TOPICS, MenuController } from "./ui/menu-controller";
+import type { MenuClusterName, MenuTopic } from "./ui/menu-controller";
+import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/radial-menu";
+import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
 import { startCamera } from "./vision/camera";
@@ -60,6 +62,9 @@ import {
 import { createHandLandmarker } from "./vision/hand-tracking";
 import { drawFrame, landmarkToCanvas } from "./vision/overlay";
 import { drawEnergy } from "./visuals/energy";
+
+/** The id of the one-handed toggle, which is not a mode or a value. */
+const ONE_HANDED_ID = "one-handed";
 
 /** The key name carried on the selected option's `data-note` attribute. */
 function readKeyName(select: HTMLSelectElement): KeyName {
@@ -141,6 +146,7 @@ export class GestureSynthApp {
     this.keyName = readKeyName(this.els.keySelect);
     this.mode = restoreSelect(this.els.modeSelect, MODE_STORAGE_KEY) as InstrumentMode;
     this.monoStyle = restoreSelect(this.els.monoStyleSelect, MONO_STYLE_STORAGE_KEY) as MonoStyle;
+    this.singleHanded = this.readStoredSingleHanded();
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
     this.gestureMap = getGestureMap(
@@ -178,9 +184,7 @@ export class GestureSynthApp {
   /** Wires the key, gesture-map, instrument, and instrument-loading controls. */
   private bindControls(): void {
     this.els.keySelect.addEventListener("change", () => {
-      this.tonicFrequency = Number(this.els.keySelect.value);
-      this.keyName = readKeyName(this.els.keySelect);
-      this.refreshHelp();
+      this.setKey(this.els.keySelect.value);
     });
 
     this.els.gestureMapSelect.addEventListener("change", () => {
@@ -196,7 +200,7 @@ export class GestureSynthApp {
     });
 
     this.els.instrumentSelect.addEventListener("change", () => {
-      this.synth.setInstrument(this.els.instrumentSelect.value);
+      this.setInstrument(this.els.instrumentSelect.value);
     });
 
     // The file inputs are hidden; the buttons are what the player sees, and
@@ -276,6 +280,35 @@ export class GestureSynthApp {
     }
 
     select.value = selectedId;
+  }
+
+  /** Switches key, and keeps the readouts in step. */
+  private setKey(value: string): void {
+    this.els.keySelect.value = value;
+    this.tonicFrequency = Number(value);
+    this.keyName = readKeyName(this.els.keySelect);
+    this.refreshHelp();
+  }
+
+  /** Switches instrument, by the picker's id. */
+  private setInstrument(id: string): void {
+    this.els.instrumentSelect.value = id;
+    this.synth.setInstrument(id);
+  }
+
+  /** Reads the remembered one-handed setting. */
+  private readStoredSingleHanded(): boolean {
+    try {
+      return window.localStorage.getItem(SINGLE_HANDED_STORAGE_KEY) === "on";
+    } catch {
+      return false;
+    }
+  }
+
+  /** Turns one-handed staging on or off, and remembers it. */
+  private setSingleHanded(enabled: boolean): void {
+    this.singleHanded = enabled;
+    remember(SINGLE_HANDED_STORAGE_KEY, enabled ? "on" : "off");
   }
 
   /** Switches the gesture vocabulary and keeps the readouts in step. */
@@ -506,15 +539,28 @@ export class GestureSynthApp {
    *   instrument silent while a setting is being chosen.
    */
   private updateControlMenu(now: number, left: Hand | null, right: Hand | null): boolean {
-    const bothClosed = left !== null && right !== null && isHandClosed(left) && isHandClosed(right);
+    const leftClosed = left !== null && isHandClosed(left);
+    const rightClosed = right !== null && isHandClosed(right);
+
+    // One hand closed is the engage gesture when there is only one hand driving;
+    // otherwise it takes both, so the menu cannot open on a single resting fist.
+    const bothClosed = this.singleHanded ? leftClosed || rightClosed : leftClosed && rightClosed;
+
+    // In single-handed mode one hand drives both stages, so it supplies both
+    // cursors; otherwise each hand drives its own cluster.
+    const soloHand = right ?? left;
+    const solo = this.singleHanded && soloHand ? this.cursorFor(soloHand) : null;
 
     const update = this.menu.update(
       {
-        options: this.menuOptions(),
+        menus: { layout: "radial", items: MENU_TOPICS, activeId: this.menuId },
+        options: this.optionsCluster(),
         bothClosed,
-        cursor: right ? this.cursorFor(right) : null,
+        menuCursor: solo ?? (left ? this.cursorFor(left) : null),
+        optionCursor: solo ?? (right ? this.cursorFor(right) : null),
         canvasWidth: this.els.canvas.width,
         canvasHeight: this.els.canvas.height,
+        staged: this.singleHanded,
       },
       now,
     );
@@ -528,53 +574,139 @@ export class GestureSynthApp {
 
     if (update.committed !== null) {
       this.applyMenuChoice(update.committed);
-      return true;
     }
 
-    if (!update.isOpen) return false;
+    if (!update.isOpen) {
+      // The next open starts on the vocabulary again, not wherever this one was.
+      this.menuId = "vocabulary";
+      return false;
+    }
 
-    this.hud.setNote(update.hoveredId === null ? "MENU" : this.labelFor(update.hoveredId));
-    this.hud.setQuality("Control", false);
-    drawRadialMenu(this.els.ctx, update);
+    drawMenuBackdrop(this.els.ctx, update.elapsedMs);
+    drawCluster(this.els.ctx, update.menus, MENUS_STYLE);
+    drawCluster(this.els.ctx, update.options, OPTIONS_STYLE);
+
+    this.hud.setNote(this.menuLabel(update.menus));
+    this.hud.setQuality(
+      update.options.hoveredId === null ? "Control" : this.labelFor(update.options),
+      false,
+    );
 
     return true;
   }
 
-  /** The label of a menu option, for the readout. */
-  private labelFor(id: string): string {
-    return this.menuOptions().find((option) => option.id === id)?.label ?? id;
+  /** The label under the readout: the menu in play, and the option hovered. */
+  private menuLabel(frame: { items: readonly MenuOption[]; activeId: string | null }): string {
+    return frame.items.find((item) => item.id === frame.activeId)?.label ?? "MENU";
   }
 
-  /**
-   * The options the menu offers: whichever picker currently occupies the shared
-   * slot, plus a switch to the other mode.
-   */
-  private menuOptions(): readonly MenuOption[] {
-    const select = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
+  /** The values the current menu holds. */
+  private optionsCluster(): {
+    layout: MenuLayout;
+    items: readonly MenuOption[];
+    activeId?: string;
+  } {
+    const asOptions = (select: HTMLSelectElement): MenuOption[] =>
+      Array.from(select.options).map((option) => ({
+        id: option.value,
+        label: option.textContent ?? option.value,
+      }));
 
-    const vocabulary = Array.from(select.options).map((option) => ({
-      id: option.value,
-      label: option.textContent ?? option.value,
-    }));
+    if (this.menuId === "key") {
+      return {
+        layout: "list",
+        items: asOptions(this.els.keySelect),
+        activeId: this.els.keySelect.value,
+      };
+    }
 
-    return menuOptionsFor(this.mode, vocabulary);
+    if (this.menuId === "instrument") {
+      return {
+        layout: "list",
+        items: asOptions(this.els.instrumentSelect),
+        activeId: this.els.instrumentSelect.value,
+      };
+    }
+
+    if (this.menuId === "settings") {
+      const oneHanded: MenuOption = {
+        id: ONE_HANDED_ID,
+        label: this.singleHanded ? "One hand: on" : "One hand: off",
+        // A settings panel is somewhere you set more than one thing, so its
+        // choices leave it open; dismissing is how you leave.
+        keepsMenuOpen: true,
+      };
+
+      return {
+        layout: "radial",
+        items: [
+          { id: "chord", label: "Chords", keepsMenuOpen: true },
+          { id: "mono", label: "Mono", keepsMenuOpen: true },
+          oneHanded,
+        ],
+        activeId: this.mode,
+      };
+    }
+
+    const vocabulary = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
+
+    return {
+      layout: "radial",
+      items: asOptions(vocabulary),
+      activeId: vocabulary.value,
+    };
   }
 
-  /** Applies a committed menu choice to whatever it came from. */
-  private applyMenuChoice(id: string): void {
-    if (isModeSwitch(id)) {
-      this.setMode(id);
+  /** The label of a cluster's hovered item, for the readout. */
+  private labelFor(frame: { items: readonly MenuOption[]; hoveredId: string | null }): string {
+    return frame.items.find((item) => item.id === frame.hoveredId)?.label ?? "";
+  }
+
+  /** Applies a committed choice to whatever it came from. */
+  private applyMenuChoice(choice: { cluster: MenuClusterName; id: string }): void {
+    if (choice.cluster === "menus") {
+      // A menu choice changes what the other cluster holds, so the menu stays
+      // open and the right hand picks up from the new list.
+      this.menuId = choice.id as MenuTopic;
+      return;
+    }
+
+    if (this.menuId === "settings") {
+      if (choice.id === ONE_HANDED_ID) {
+        this.setSingleHanded(!this.singleHanded);
+        return;
+      }
+
+      // Settings holds the mode, which is what the vocabulary menu depends on.
+      this.setMode(choice.id as InstrumentMode);
+      return;
+    }
+
+    if (this.menuId === "key") {
+      this.setKey(choice.id);
+      return;
+    }
+
+    if (this.menuId === "instrument") {
+      this.setInstrument(choice.id);
       return;
     }
 
     if (this.mode === "mono") {
-      this.setMonoStyle(id as MonoStyle);
+      this.setMonoStyle(choice.id as MonoStyle);
     } else {
-      this.setGestureMap(id);
+      this.setGestureMap(choice.id);
     }
   }
 
-  /** The right hand's palm centre, in canvas coordinates, for the menu cursor. */
+  /** Which menu the left hand has chosen, and the right hand is choosing within. */
+  private menuId: MenuTopic = "vocabulary";
+  /** Whether one hand drives the whole menu, a stage at a time. */
+  private singleHanded = false;
+
+  /**
+   * The right hand's palm centre, in canvas coordinates, for the menu cursor.
+   */
   private cursorFor(hand: Hand): CanvasPoint | null {
     const { videoWidth, videoHeight } = this.els.video;
     if (!videoWidth || !videoHeight) return null;

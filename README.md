@@ -81,7 +81,7 @@ will load the app but cannot reach the camera.
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
 - Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
-- A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose
+- A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose. It reaches the key and the instrument too, as a list
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -198,7 +198,8 @@ src/
     volume-meter.ts        The eight-segment volume meter.
     gesture-guide.ts       The cheat sheet, rendered for the mode in play: the
                            active map's degrees, or the mono voice's pitch ladder.
-    radial-menu.ts         The gesture menu's geometry, hit-testing, and drawing.
+    radial-menu.ts         The gesture menu: the ring's geometry and the list's,
+                           hit-testing for both, and the fan-out drawing.
     menu-controller.ts     When the menu opens, what it highlights, and what commits.
     help-modal.ts          The "how to play" modal, filtered to the mode in play.
     start-overlay.ts       The click-to-enable-audio gate.
@@ -332,12 +333,6 @@ a mouse mid-performance — and each feature added since has added another one. 
   into the time the player has to choose.
 - **Idling times it out** after a few seconds with the hand off every option.
 
-The menu carries the vocabulary for the current mode — the gesture maps in Chords mode,
-the mono styles in Mono mode — **plus a switch to the other mode**, because otherwise
-the two sets would be mutually unreachable by gesture. The switch keeps the menu open,
-so the ring re-renders in place and picking the other vocabulary is one continuous
-movement rather than two trips through the menu.
-
 The anchor is nudged back on screen when the hand is near an edge, so an option is never
 off-screen — where it could still be selected by direction but could not be seen.
 Because that nudge can leave the hand sitting off-centre, a deliberate move is required
@@ -346,6 +341,57 @@ and the two coincide.
 
 Opening the menu silences the instrument: it is a deliberate pause, not an overlay you
 play through.
+
+The menu carries the vocabulary for the current mode — the gesture maps in Chords mode,
+the mono styles in Mono mode — **plus a switch to the other mode**, because otherwise
+the two sets would be mutually unreachable by gesture. The switch keeps the menu open,
+so the ring re-renders in place and picking the other vocabulary is one continuous
+movement rather than two trips through the menu.
+
+#### Two clusters, one hand each
+
+The menu used to mix two kinds of thing in one ring: values you can choose, and
+doors into somewhere else. "Classic" is a choice _in_ the menu; "Key" is a way
+_out_ of it, and they were drawn identically. So each kind now has its own cluster
+and its own hand:
+
+- the **left hand picks the menu** you are in — Vocabulary, Key, Instrument, Settings;
+- the **right hand picks the option** within it.
+
+Both are live at once, so changing menu and changing option are one movement rather
+than two trips. Each cluster is anchored to its own hand, so each hand starts inside
+its own dead zone and neither can select anything by resting.
+
+The menus cluster is drawn to read as a way elsewhere, in **three ways at once**
+rather than colour alone — colour fails for colour-blind players and washes out over
+a busy camera frame. It takes a cool accent against the options' gold, a chevron
+before each label, and a dashed outline. The menu in force is filled, so you can see
+where you are.
+
+#### One hand, in stages
+
+With one hand the same two levels happen in turn rather than at once: open the menu,
+hold on a menu, then hold on an option. After a menu is chosen the options are
+**anchored where that menu item was** — the hand is already out there, so it lands in
+the middle of the new cluster and cannot select something by simply not moving. The
+cluster waiting its turn is drawn faded, so it is clear which one the hand is on.
+
+It is a setting in **Settings**, which is also where the mode lives now: the mode is
+not a value of the vocabulary, it decides which vocabulary there is.
+
+#### The key and the instrument open a list
+
+A ring stops working somewhere around eight options: twelve keys would need more
+circumference than the circle has. So the Key and Instrument menus open as a **list**
+down the canvas instead:
+
+- the hand's **height** picks the row, so the choice is one dimension rather than two,
+  and a hand does not have to be over the label horizontally;
+- the dwell fills the row from the left, and commits the same way it does in the ring;
+- the rows arrive as a wave too, on a shorter stagger, since there are more of them.
+
+Nothing is reachable only by mouse now except the two file pickers, which are the
+operating system's dialog and cannot be anything else.
 
 The hold-before-commit rule is shared. `DwellStabilizer` is the general shape — wait for
 a value to be steady, then act on it — and both the chord path and the menu use it.
