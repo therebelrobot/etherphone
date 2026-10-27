@@ -44,6 +44,8 @@ export interface MenuUpdate {
   readonly hoveredId: string | null;
   /** How far the dwell on the hovered option has filled, 0..1. */
   readonly dwellProgress: number;
+  /** Milliseconds since the menu opened, which drives the fan-out. */
+  readonly elapsedMs: number;
   /** The choice that committed on this frame, if any. */
   readonly committed: string | null;
   /** True on the frame the menu opened, so the caller can silence the instrument. */
@@ -83,6 +85,8 @@ export class MenuController {
   private steerFrom: CanvasPoint | null = null;
   /** True once the cursor has travelled far enough to count as steering. */
   private steering = false;
+  /** When the menu opened, so the fan-out can be animated from it. */
+  private openedAt = 0;
 
   constructor(options: MenuControllerOptions = {}) {
     this.idleTimeoutMs = options.idleTimeoutMs ?? CONTROL.idleTimeoutMs;
@@ -123,6 +127,7 @@ export class MenuController {
       this.isOpen = true;
       this.armed = false;
       this.idleSince = now;
+      this.openedAt = now;
       this.dwell.reset();
       this.anchor = fitAnchor(wanted, input.canvasWidth, input.canvasHeight);
       this.steerFrom = input.cursor;
@@ -161,6 +166,7 @@ export class MenuController {
       cursor: input.cursor,
       hoveredId,
       dwellProgress: hoveredId === null ? 0 : this.dwell.progress(now),
+      elapsedMs: now - this.openedAt,
       committed: null,
       justOpened,
     };
@@ -205,6 +211,7 @@ export class MenuController {
       cursor: null,
       hoveredId: null,
       dwellProgress: 0,
+      elapsedMs: 0,
       committed: null,
       justOpened: false,
     };

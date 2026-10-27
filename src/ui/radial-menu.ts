@@ -31,6 +31,8 @@ export interface MenuFrame {
   readonly hoveredId: string | null;
   /** How far the dwell has filled, 0..1. */
   readonly dwellProgress: number;
+  /** Milliseconds since the menu opened, which drives the fan-out. */
+  readonly elapsedMs: number;
 }
 
 const GOLD = "#e8a13d";
@@ -135,46 +137,138 @@ function clampAxis(value: number, size: number, margin: number): number {
   return Math.min(Math.max(value, margin), size - margin);
 }
 
-/** Draws one frame of the menu over whatever is already on the canvas. */ export function drawRadialMenu(
-  ctx: CanvasRenderingContext2D | null,
-  frame: MenuFrame,
-): void {
+/** Clamps a number into 0..1. */
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/** Decelerating ease, used for anything that should not overshoot. */
+function easeOutCubic(t: number): number {
+  const p = t - 1;
+  return p * p * p + 1;
+}
+
+/**
+ * Ease that carries past its target and settles back onto it.
+ *
+ * This is what makes the fan-out feel thrown rather than moved: each option
+ * overshoots its resting spot by roughly a tenth and springs back.
+ */
+export function easeOutBack(t: number): number {
+  const s = CONTROL.fanOvershoot;
+  const p = t - 1;
+
+  return 1 + (s + 1) * p * p * p + s * p * p;
+}
+
+/**
+ * How far one option has travelled out of the anchor, 0..1.
+ *
+ * Each option starts a little later than the one before it, so the menu arrives
+ * as a wave instead of all at once.
+ */
+export function fanProgress(index: number, elapsedMs: number): number {
+  return clamp01((elapsedMs - index * CONTROL.fanStaggerMs) / CONTROL.fanOutMs);
+}
+
+/** Where an option sits, and how it is shaped, part-way through the fan-out. */
+export interface FanState {
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  /** How far the option is pulled along its own radius, as a fraction. */
+  readonly stretch: number;
+  readonly alpha: number;
+}
+
+/**
+ * The animated position and shape of one option.
+ *
+ * The stretch peaks mid-flight and is gone on arrival, so an option reads as a
+ * blob being pulled out of the anchor rather than a circle sliding along a line.
+ */
+export function fanState(
+  slot: RadialSlot,
+  index: number,
+  elapsedMs: number,
+  centerX: number,
+  centerY: number,
+): FanState {
+  const progress = fanProgress(index, elapsedMs);
+  const distance = CONTROL.radius * easeOutBack(progress);
+  const scale = easeOutCubic(progress);
+
+  return {
+    x: centerX + Math.cos(slot.angle) * distance,
+    y: centerY + Math.sin(slot.angle) * distance,
+    radius: CONTROL.optionRadius * scale,
+    stretch: Math.sin(Math.PI * progress) * 0.45,
+    alpha: scale,
+  };
+}
+
+/** Draws one frame of the menu over whatever is already on the canvas. */
+export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFrame): void {
   if (!ctx) return;
 
-  const { slots, centerX, centerY, cursor, hoveredId, dwellProgress } = frame;
+  const { slots, centerX, centerY, cursor, hoveredId, dwellProgress, elapsedMs } = frame;
 
   ctx.save();
 
-  // Push the instrument back so the options read clearly.
+  // Push the instrument back so the options read clearly, fading in with the
+  // menu rather than arriving ahead of what it is there to frame.
+  ctx.globalAlpha = clamp01(elapsedMs / 200);
   ctx.fillStyle = DIMMED;
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.globalAlpha = 1;
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  for (const slot of slots) {
+  slots.forEach((slot, index) => {
+    const state = fanState(slot, index, elapsedMs, centerX, centerY);
+    if (state.radius <= 0.5) return;
+
     const isHovered = slot.id === hoveredId;
 
+    // Stretched along its own radius, which is the direction it is travelling.
+    ctx.save();
+    ctx.translate(state.x, state.y);
+    ctx.rotate(slot.angle);
+
     ctx.beginPath();
-    ctx.arc(slot.x, slot.y, CONTROL.optionRadius, 0, Math.PI * 2);
+    ctx.ellipse(
+      0,
+      0,
+      state.radius * (1 + state.stretch),
+      state.radius * (1 - state.stretch * 0.45),
+      0,
+      0,
+      Math.PI * 2,
+    );
+    ctx.globalAlpha = state.alpha;
     ctx.fillStyle = isHovered ? OPTION_HOVER : OPTION_IDLE;
     ctx.fill();
     ctx.lineWidth = isHovered ? 3 : 1;
     ctx.strokeStyle = isHovered ? GOLD : EDGE;
     ctx.stroke();
+    ctx.restore();
 
+    // The label stays upright, and arrives with the option rather than before it.
+    ctx.globalAlpha = state.alpha;
     ctx.fillStyle = GOLD;
     ctx.font = "16px monospace";
-    ctx.fillText(slot.label, slot.x, slot.y);
+    ctx.fillText(slot.label, state.x, state.y);
+    ctx.globalAlpha = 1;
 
     // The dwell ring: an arc that closes as the hold completes, so the commit
     // is never a surprise.
     if (isHovered && dwellProgress > 0) {
       ctx.beginPath();
       ctx.arc(
-        slot.x,
-        slot.y,
-        CONTROL.optionRadius + 8,
+        state.x,
+        state.y,
+        state.radius + 8,
         -Math.PI / 2,
         -Math.PI / 2 + dwellProgress * Math.PI * 2,
       );
@@ -182,9 +276,10 @@ function clampAxis(value: number, size: number, margin: number): number {
       ctx.strokeStyle = GOLD;
       ctx.stroke();
     }
-  }
+  });
 
   // A quiet mark where the menu is centred, so the dead zone is visible.
+  ctx.globalAlpha = clamp01(elapsedMs / 200);
   ctx.beginPath();
   ctx.arc(centerX, centerY, 3, 0, Math.PI * 2);
   ctx.fillStyle = EDGE;
@@ -198,5 +293,6 @@ function clampAxis(value: number, size: number, margin: number): number {
     ctx.stroke();
   }
 
+  ctx.globalAlpha = 1;
   ctx.restore();
 }

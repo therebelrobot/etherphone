@@ -91,6 +91,23 @@ export const CONTROL = {
   moveThreshold: 80,
   /** How long the cursor must rest on an option before it commits (ms). */
   dwellMs: 900,
+  /**
+   * How long one option takes to fly out of the anchor (ms).
+   *
+   * Short enough to feel like a flick rather than a transition. The whole menu
+   * is out well inside `dwellMs`, so the fan-out can never eat into the time
+   * the player has to choose.
+   */
+  fanOutMs: 340,
+  /** Delay between consecutive options, so they come out as a wave (ms). */
+  fanStaggerMs: 70,
+  /**
+   * Back-easing constant for the fan-out.
+   *
+   * The classic overshoot value: each option carries about a tenth of the way
+   * past its resting spot and settles back onto it.
+   */
+  fanOvershoot: 1.7,
   /** How long the menu stays open with the cursor off every option (ms). */
   idleTimeoutMs: 5000,
   /** Distance from the menu's centre to an option, in canvas pixels. */

@@ -81,7 +81,7 @@ will load the app but cannot reach the camera.
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
 - Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
-- A **gesture menu**: close both hands to open it around your hand, push out to point, dwell to choose
+- A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -314,6 +314,12 @@ a mouse mid-performance — and each feature added since has added another one. 
   applied and the menu shuts. Releasing the engage gesture before holding it again is
   required, so a player still holding their fists shut does not get a menu reopening
   underneath them.
+- **The options fan out.** Each one flies out of the anchor and settles onto its spot,
+  a little after the one before it, so the menu arrives as a wave rather than all at
+  once. Each is stretched along the direction it is travelling while it is in flight
+  and rounds off on arrival, and each overshoots its resting spot slightly before
+  springing back. The whole fan-out is over well inside `dwellMs`, so it can never eat
+  into the time the player has to choose.
 - **Idling times it out** after a few seconds with the hand off every option.
 
 The anchor is nudged back on screen when the hand is near an edge, so an option is never

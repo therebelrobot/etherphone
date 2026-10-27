@@ -332,6 +332,22 @@ describe("MenuController choosing", () => {
     expect(frame.slots).toHaveLength(OPTIONS.length);
   });
 
+  it("reports how long it has been open, so the fan-out can be animated", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+
+    expect(controller.update(input({ bothClosed: true, cursor: HAND }), opened).elapsedMs).toBe(0);
+    expect(
+      controller.update(input({ bothClosed: true, cursor: HAND }), opened + 120).elapsedMs,
+    ).toBe(120);
+  });
+
+  it("reports no elapsed time when it is shut", () => {
+    const controller = makeController();
+
+    expect(controller.update(input({ bothClosed: false }), 500).elapsedMs).toBe(0);
+  });
+
   it("forgets the anchor when it closes", () => {
     const controller = makeController();
     const steered = openAndSteer(controller, 1);

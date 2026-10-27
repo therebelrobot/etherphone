@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL } from "../config/constants";
-import { fitAnchor, layoutRadial, slotAt } from "./radial-menu";
+import { easeOutBack, fanProgress, fanState, fitAnchor, layoutRadial, slotAt } from "./radial-menu";
 
 const THREE = [
   { id: "a", label: "A" },
@@ -46,6 +46,88 @@ describe("fitAnchor", () => {
 
   it("centres instead when the canvas is smaller than the menu", () => {
     expect(fitAnchor({ x: 0, y: 0 }, 100, 100)).toEqual({ x: 50, y: 50 });
+  });
+});
+
+describe("fanProgress", () => {
+  it("has not started before the option's turn", () => {
+    expect(fanProgress(0, 0)).toBe(0);
+    expect(fanProgress(1, CONTROL.fanStaggerMs - 1)).toBe(0);
+  });
+
+  it("is under way once the option's turn comes round", () => {
+    expect(fanProgress(0, CONTROL.fanOutMs / 2)).toBeCloseTo(0.5, 5);
+    expect(fanProgress(1, CONTROL.fanStaggerMs + CONTROL.fanOutMs / 2)).toBeCloseTo(0.5, 5);
+  });
+
+  it("is finished once the option has had its full run", () => {
+    expect(fanProgress(0, CONTROL.fanOutMs)).toBe(1);
+    expect(fanProgress(2, CONTROL.fanStaggerMs * 2 + CONTROL.fanOutMs)).toBe(1);
+  });
+
+  it("starts each option later than the last, which is the wave", () => {
+    const at = CONTROL.fanOutMs / 2;
+
+    expect(fanProgress(0, at)).toBeGreaterThan(fanProgress(1, at));
+    expect(fanProgress(1, at)).toBeGreaterThan(fanProgress(2, at));
+  });
+});
+
+describe("easeOutBack", () => {
+  it("starts at nothing and ends exactly on the target", () => {
+    expect(easeOutBack(0)).toBeCloseTo(0, 6);
+    expect(easeOutBack(1)).toBeCloseTo(1, 6);
+  });
+
+  it("overshoots on the way, which is what makes it springy", () => {
+    expect(easeOutBack(0.7)).toBeGreaterThan(1);
+  });
+});
+
+describe("fanState", () => {
+  const slots = layoutRadial(THREE, CENTER.x, CENTER.y);
+
+  it("starts the option at the anchor, with no size", () => {
+    const state = fanState(slots[0], 0, 0, CENTER.x, CENTER.y);
+
+    expect(state.x).toBeCloseTo(CENTER.x);
+    expect(state.y).toBeCloseTo(CENTER.y);
+    expect(state.radius).toBeCloseTo(0);
+    expect(state.alpha).toBeCloseTo(0);
+  });
+
+  it("lands the option on its resting spot, round and opaque", () => {
+    const settled = CONTROL.fanOutMs;
+    const state = fanState(slots[0], 0, settled, CENTER.x, CENTER.y);
+
+    expect(state.x).toBeCloseTo(slots[0].x);
+    expect(state.y).toBeCloseTo(slots[0].y);
+    expect(state.radius).toBeCloseTo(CONTROL.optionRadius);
+    expect(state.stretch).toBeCloseTo(0, 5);
+    expect(state.alpha).toBeCloseTo(1, 5);
+  });
+
+  it("stretches while it is travelling, and not once it has arrived", () => {
+    const mid = fanState(slots[0], 0, CONTROL.fanOutMs * 0.45, CENTER.x, CENTER.y);
+
+    expect(mid.stretch).toBeGreaterThan(0.1);
+    expect(mid.stretch).toBeLessThan(0.5);
+  });
+
+  it("overshoots its resting spot and springs back onto it", () => {
+    const resting = Math.hypot(slots[0].x - CENTER.x, slots[0].y - CENTER.y);
+
+    let furthest = 0;
+    for (let elapsed = 0; elapsed <= CONTROL.fanOutMs; elapsed += 10) {
+      const state = fanState(slots[0], 0, elapsed, CENTER.x, CENTER.y);
+      furthest = Math.max(furthest, Math.hypot(state.x - CENTER.x, state.y - CENTER.y));
+    }
+
+    // The throw carries past the target, then settles exactly on it.
+    expect(furthest).toBeGreaterThan(resting);
+
+    const settled = fanState(slots[0], 0, CONTROL.fanOutMs, CENTER.x, CENTER.y);
+    expect(Math.hypot(settled.x - CENTER.x, settled.y - CENTER.y)).toBeCloseTo(resting, 3);
   });
 });
 
