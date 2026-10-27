@@ -66,13 +66,35 @@ export function frequencyAtPosition(position: number, tonicFrequency: number): n
   return from * Math.pow(to / from, mix);
 }
 
+/** The written name of a scale degree, with its octave marked when it has one. */
+export function noteNameForDegree(degree: number, keyName: KeyName): string {
+  const withinOctave = ((degree - 1) % 7) + 1;
+  const name = getScaleNoteName(keyName, withinOctave);
+  const octave = Math.floor((degree - 1) / 7);
+
+  if (octave === 0) return name;
+  return `${name} +${octave}`;
+}
+
 /** The written name of a reading's pitch, e.g. `C#` or `C# +1` an octave up. */
 export function monoNoteLabel(reading: MonoReading, keyName: KeyName): string {
-  const withinOctave = ((reading.degree - 1) % 7) + 1;
-  const name = getScaleNoteName(keyName, withinOctave);
+  return noteNameForDegree(reading.degree, keyName);
+}
 
-  if (reading.octave === 0) return name;
-  return `${name} ${reading.octave > 0 ? "+" : ""}${reading.octave}`;
+/**
+ * Every note the pitch hand can reach, highest first.
+ *
+ * Highest first so the guide can be read top-to-bottom as the frame is: the top
+ * of the list is the top of the frame.
+ */
+export function monoGuideNotes(keyName: KeyName): string[] {
+  const notes: string[] = [];
+
+  for (let degree = 1 + PITCH_SPAN_DEGREES; degree >= 1; degree -= 1) {
+    notes.push(noteNameForDegree(degree, keyName));
+  }
+
+  return notes;
 }
 
 /** The roman numeral of a reading's degree, used to colour the energy ribbon. */

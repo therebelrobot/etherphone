@@ -196,10 +196,11 @@ src/
     dom.ts                 The full list of ids and classes the app expects.
     hud.ts                 Chord, quality, and filter readouts.
     volume-meter.ts        The eight-segment volume meter.
-    gesture-guide.ts       The scale-degree cheat sheet, rendered from the active map.
+    gesture-guide.ts       The cheat sheet, rendered for the mode in play: the
+                           active map's degrees, or the mono voice's pitch ladder.
     radial-menu.ts         The gesture menu's geometry, hit-testing, and drawing.
     menu-controller.ts     When the menu opens, what it highlights, and what commits.
-    help-modal.ts          The "how to play" modal.
+    help-modal.ts          The "how to play" modal, filtered to the mode in play.
     start-overlay.ts       The click-to-enable-audio gate.
 ```
 
@@ -245,6 +246,12 @@ before it is committed and tolerates a 50ms dropout. That is why the instrument 
 not flicker between chords when MediaPipe loses a hand for a frame. Mono mode reads
 the frame directly: there is no chord to stabilise, because the note is simply
 wherever the hand is.
+
+**The cheat sheet follows the mode**, because the same hand does different things in
+each. In Chords mode it lists the active gesture map's degrees and the shape that
+selects each; in Mono mode it is a ladder of the notes the pitch hand can reach,
+highest at the top so it reads the way the frame does. The `?` guide is filtered the
+same way — a guide that describes the hand you are not playing is worse than none.
 
 #### Chords mode
 
