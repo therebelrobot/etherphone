@@ -85,14 +85,24 @@ describe("Recorder", () => {
     expect(events[0]).toMatchObject({ kind: "note", degree: 1 });
   });
 
-  it("drops onsets past the loop's end rather than wrapping them", () => {
+  it("wraps an onset at the loop's end round to its start", () => {
     const recorder = new Recorder();
     recorder.start();
 
-    recorder.capture(I_CHORD, 0.8, 0, 0);
-    recorder.capture(V_CHORD, 0.8, 0, 8.2);
+    recorder.capture(V_CHORD, 0.8, 0, 8.1);
 
-    expect(finished(recorder, 8).events).toHaveLength(1);
+    // Takes are rotated onto the loop's grid, so its end and its start are the
+    // same instant — an onset that snaps there belongs at 0, not in the bin.
+    expect(finished(recorder, 8).events.map((event) => event.beat)).toEqual([0]);
+  });
+
+  it("drops an onset more than a loop past the end", () => {
+    const recorder = new Recorder();
+    recorder.start();
+
+    recorder.capture(I_CHORD, 0.8, 0, 16);
+
+    expect(finished(recorder, 8).events).toHaveLength(0);
   });
 
   it("ignores frames once the take is closed", () => {

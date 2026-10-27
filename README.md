@@ -434,10 +434,20 @@ handful of numbers rather than a waveform, and it replays through the same harmo
 functions the live instrument uses, so a take sounds like the take. It also means
 changing the key **transposes the loop**, in step with everything else.
 
-Each mode records into its own **layer**: record in Chords, switch to Mono, record
-again, and the two play together. The **Layers** menu toggles each one in and out
-(and the buttons under the transport do the same by mouse) — which is the move that
-makes a looper something you can _perform_ with rather than just listen to.
+**Record adds a layer.** Press it and you get another one — `Chords 1`, `Chords 2`,
+`Mono 1` — rather than a wiped one, so building a part is additive and a misflick costs
+nothing. It arms, **counts in to the next bar line** (the readout counts it down), and
+records for the chosen number of bars. A layer may begin at any bar: it is **rotated onto
+the loop's grid**, so it keeps time with whatever is already playing instead of waiting
+for the top of the loop.
+
+![Two chord layers: the second recorded over the first](docs/screenshots/loop-tracks/05-record-adds-a-layer.png)
+
+Redoing a layer is asked for by name. The **Layers** menu lists them; choosing one hands
+it over, and the menu then offers **Mute** (drop it out and back in without stopping),
+**Rewrite** (record that layer again) and **Clear** (throw it away). The destructive two
+are deliberately a second step — and a cancelled rewrite puts back the take it displaced
+rather than losing it. The buttons under the transport mute a layer in one click.
 
 ![Two layers looping: a chord bed and a melody](docs/screenshots/loop-tracks/02-two-layers.png)
 
@@ -447,6 +457,10 @@ playhead rather than appearing all at once when the take closes, so you can see 
 landing while you are still playing it:
 
 ![A layer filling as it records, up to the playhead](docs/screenshots/loop-tracks/04-recording.png)
+
+The hold through the **seam** is drawn as well: nothing silences a layer when the loop
+wraps, so a layer that begins part-way in is still sounding over the loop's opening beats
+— those belong to its last note, not to a gap.
 
 A dropped-out layer goes faded and struck through, so the arrangement reads at a glance:
 

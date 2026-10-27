@@ -100,6 +100,22 @@ export function trackSegments(
     });
   }
 
+  // The hold through the seam. A take that starts part-way into the loop is
+  // still sounding when the loop wraps — nothing silences a layer at the seam —
+  // so its opening beats belong to its last note. Only a finished take knows
+  // this; a recording in progress is left with the gap it is going to fill.
+  const firstBeat = sorted.length > 0 ? Math.max(0, sorted[0].beat) : 0;
+  const last = segments.at(-1);
+
+  if (limitBeats >= loopBeats && last && last.endBeat >= loopBeats && firstBeat > 0) {
+    segments.unshift({
+      startBeat: 0,
+      endBeat: firstBeat,
+      kind: last.kind,
+      numeral: last.numeral,
+    });
+  }
+
   return segments;
 }
 

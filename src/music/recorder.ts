@@ -123,7 +123,16 @@ export class Recorder {
   finish(options: FinishOptions): Take {
     this.active = false;
 
-    const events = this.captured.filter((event) => event.beat < options.loopBeats);
+    // A beat that snaps to the loop's end belongs at its start: takes are
+    // rotated onto the loop's grid, so those two are the same instant.
+    const events = this.captured
+      .map((event) =>
+        event.beat >= options.loopBeats
+          ? { ...event, beat: event.beat - options.loopBeats }
+          : event,
+      )
+      .filter((event) => event.beat < options.loopBeats)
+      .sort((a, b) => a.beat - b.beat);
 
     return { bpm: options.bpm, loopBeats: options.loopBeats, events };
   }

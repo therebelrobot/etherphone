@@ -33,9 +33,9 @@ describe("trackSegments", () => {
   });
 
   it("carries the last event to the end of the loop", () => {
-    const [segment] = trackSegments([chord(3)], 8);
+    const segments = trackSegments([chord(0), chord(3, "V")], 8);
 
-    expect(segment).toMatchObject({ startBeat: 3, endBeat: 8 });
+    expect(segments.at(-1)).toMatchObject({ startBeat: 3, endBeat: 8 });
   });
 
   it("leaves a gap where a rest holds nothing", () => {
@@ -82,5 +82,33 @@ describe("trackSegments", () => {
 
   it("draws nothing before the playhead has reached the first note", () => {
     expect(trackSegments([chord(2)], 8, 1)).toEqual([]);
+  });
+
+  it("wraps a take's last note round the seam when it starts part-way in", () => {
+    const segments = trackSegments([chord(4, "V")], 8);
+
+    // Nothing silences a layer at the seam, so the note that is sounding when
+    // the loop wraps is still sounding over the loop's opening beats.
+    expect(segments.map((segment) => [segment.startBeat, segment.endBeat])).toEqual([
+      [0, 4],
+      [4, 8],
+    ]);
+    expect(segments[0].numeral).toBe("V");
+  });
+
+  it("leaves the seam open while a take is still being recorded", () => {
+    const segments = trackSegments([chord(2, "V")], 8, 5);
+
+    expect(segments.map((segment) => [segment.startBeat, segment.endBeat])).toEqual([[2, 5]]);
+  });
+
+  it("does not wrap a take that already starts on the downbeat", () => {
+    const segments = trackSegments([chord(0), chord(4, "V")], 8);
+
+    expect(segments.map((segment) => [segment.startBeat, segment.endBeat])).toEqual([
+      [0, 4],
+      [4, 8],
+    ]);
+    expect(segments).toHaveLength(2);
   });
 });

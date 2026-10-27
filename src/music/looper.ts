@@ -1,11 +1,11 @@
 /**
  * The looper: recording layers and playing them back together.
  *
- * A *track* is one recorded layer — a chord bed, a lead line — and they all
- * share the transport's grid, so a chord loop and a melody over it stay in
- * phase. That is the whole reason tracks exist as a concept rather than the
- * instrument having "a loop": the moment there are two, they have to agree
- * about where the bar line is.
+ * A *track* is one recorded layer — a chord bed, a lead line, a second chord
+ * part — and they all share the transport's grid, so anything recorded over
+ * anything else stays in phase. Layers are numbered within their mode
+ * (`Chords 1`, `Chords 2`, `Mono 1`), because the mode says what a layer
+ * *plays*, not how many of them there can be.
  *
  * The looper owns neither audio nor a clock. It reads position from the
  * {@link Transport} and hands back each track's events as they come due, tagged
@@ -21,8 +21,8 @@ import type { Transport } from "../audio/transport";
 import { Recorder } from "./recorder";
 import type { RecordedIntent } from "./recorder";
 
-/** A track is named after the mode that plays it: `chord` or `mono`. */
-export type TrackId = InstrumentMode;
+/** Layers are named, not derived from their mode: there can be several per mode. */
+export type TrackId = string;
 
 /** One layer: what it is, what it holds, and whether it is sounding. */
 export interface LoopTrack {
@@ -41,17 +41,29 @@ export interface LoopTrack {
   readonly muted: boolean;
 }
 
-/** A recording request, which names the layer it will fill. */
-export interface TrackRequest {
-  readonly id: TrackId;
-  readonly label: string;
-  readonly mode: InstrumentMode;
-}
-
 /** One event, on the track it should be played through. */
 export interface TrackHit {
   readonly trackId: TrackId;
   readonly event: TakeEvent;
+}
+
+/** Whether a pending recording fills a new layer or replaces an existing one. */
+export type RecordKind = "new" | "rewrite";
+
+/** A recording waiting for its bar line. */
+interface Armed {
+  readonly kind: RecordKind;
+  readonly trackId: TrackId;
+  readonly label: string;
+  readonly mode: InstrumentMode;
+  /** The absolute beat the recording begins on. */
+  readonly targetBeat: number;
+}
+
+/** A recording in progress. */
+interface Recording {
+  readonly kind: RecordKind;
+  readonly trackId: TrackId;
 }
 
 /** A hair before the cursor, so an event exactly on it still fires. */
@@ -66,39 +78,62 @@ export class Looper {
   private readonly recorder = new Recorder();
   private readonly tracksValue = new Map<TrackId, LoopTrack>();
 
-  /** The track waiting for its bar line, and where that line is. */
-  private armed: { track: TrackRequest; targetBeat: number; setsOrigin: boolean } | null = null;
-  private recordingValue: TrackId | null = null;
+  /** How many layers of each mode have ever been made, for the labels. */
+  private readonly labelCounts: Record<InstrumentMode, number> = { chord: 0, mono: 0 };
+  private layerCount = 0;
 
-  /** The absolute beat the loop's beat 0 landed on. Shared by every track. */
+  private armed: Armed | null = null;
+  private recording: Recording | null = null;
+
+  /**
+   * The take a rewrite displaced, held so a cancelled rewrite is not a deletion.
+   */
+  private displaced: { readonly trackId: TrackId; readonly take: Take } | null = null;
+
+  /** The absolute beat the loop's beat 0 landed on. Shared by every layer. */
   private originBeat = 0;
-  /** The absolute beat the *current* recording began on, so its beats are loop-relative. */
+  /** The absolute beat the *current* recording began on. */
   private recordOriginBeat = 0;
+  /** Where in the loop that was, so a take can be rotated onto the grid. */
+  private recordOffset = 0;
   /** The greatest absolute beat already played, so nothing fires twice. */
   private lastPlayedBeat = 0;
 
   constructor(private readonly transport: Transport) {}
 
   get state(): LooperState {
-    if (this.recordingValue !== null) return "recording";
+    if (this.recording !== null) return "recording";
     if (this.armed !== null) return "armed";
     if (this.transport.isPlaying && this.hasTake) return "playing";
     return "idle";
   }
 
-  /** Every track, in the order it was first armed. */
+  /** Every layer, in the order it was first armed. */
   get tracks(): readonly LoopTrack[] {
     return Array.from(this.tracksValue.values());
   }
 
-  /** Whether any track holds a take. */
+  /** Whether any layer holds a take. */
   get hasTake(): boolean {
     return this.tracks.some((track) => track.take !== null);
   }
 
-  /** The track currently being recorded, if any. */
+  /** The layer currently being recorded, if any. */
   get recordingId(): TrackId | null {
-    return this.recordingValue;
+    return this.recording?.trackId ?? null;
+  }
+
+  /** The name of the layer being recorded, for the readout. */
+  get recordingLabel(): string | null {
+    const id = this.recordingId;
+    return id === null ? null : (this.tracksValue.get(id)?.label ?? null);
+  }
+
+  /** Beats until an armed recording begins, for the count-in readout. */
+  countdownBeats(ctxTime: number): number {
+    if (!this.armed) return 0;
+
+    return Math.max(0, this.armed.targetBeat - this.transport.elapsedBeats(ctxTime));
   }
 
   /**
@@ -112,45 +147,59 @@ export class Looper {
     const track = this.tracksValue.get(id);
     if (!track) return [];
 
-    return this.recordingValue === id ? this.recorder.events : (track.take?.events ?? []);
+    return this.recordingId === id ? this.recorder.events : (track.take?.events ?? []);
   }
 
   /**
-   * Arms a recording into a track, which begins on the next bar line.
+   * Arms a recording of a **new layer** for `mode`.
    *
-   * The first track sets the loop's phase at the next bar — a bar of count-in
-   * from rest. Every later track waits for the *top of the loop* instead, so
-   * the new layer's first beat is the loop's first beat and the layers stay
-   * lined up rather than starting wherever a hand happened to be.
+   * Recording adds rather than replaces, so a misflick costs nothing and the
+   * way to redo a layer is to say so — see {@link rewrite}.
    */
-  record(ctxTime: number, track: TrackRequest): void {
-    if (this.armed !== null || this.recordingValue !== null) return;
+  record(ctxTime: number, mode: InstrumentMode): void {
+    if (this.armed !== null || this.recording !== null) return;
 
-    if (!this.transport.isPlaying) {
-      this.transport.start(ctxTime);
-      this.originBeat = 0;
-      this.lastPlayedBeat = -EPSILON;
-    }
+    this.startClockIfNeeded(ctxTime);
 
-    const setsOrigin = !this.hasTake;
+    const id = `layer-${(this.layerCount += 1)}`;
+    this.labelCounts[mode] += 1;
 
     // The lane appears the moment it is armed, so the player can see where the
     // recording will land even before it starts.
-    const existing = this.tracksValue.get(track.id);
-    this.tracksValue.set(track.id, {
-      ...track,
-      take: existing?.take ?? null,
-      muted: existing?.muted ?? false,
+    this.tracksValue.set(id, {
+      id,
+      label: `${trackLabel(mode)} ${this.labelCounts[mode]}`,
+      mode,
+      take: null,
+      muted: false,
     });
 
     this.armed = {
-      track,
-      targetBeat: setsOrigin ? this.transport.nextBarBeat(ctxTime) : this.nextLoopTop(ctxTime),
-      setsOrigin,
+      kind: "new",
+      trackId: id,
+      label: this.tracksValue.get(id)?.label ?? "",
+      mode,
+      targetBeat: this.transport.nextBarBeat(ctxTime),
     };
   }
 
-  /** Starts every stored track from the loop's beginning, in phase. */
+  /** Arms a recording that will replace an existing layer. */
+  rewrite(ctxTime: number, id: TrackId): void {
+    const track = this.tracksValue.get(id);
+    if (!track || this.armed !== null || this.recording !== null) return;
+
+    this.startClockIfNeeded(ctxTime);
+
+    this.armed = {
+      kind: "rewrite",
+      trackId: id,
+      label: track.label,
+      mode: track.mode,
+      targetBeat: this.transport.nextBarBeat(ctxTime),
+    };
+  }
+
+  /** Starts every stored layer from the loop's beginning, in phase. */
   play(ctxTime: number): void {
     if (!this.hasTake) return;
 
@@ -159,30 +208,36 @@ export class Looper {
     this.lastPlayedBeat = -EPSILON;
   }
 
-  /** Stops the clock and any recording. The tracks are kept. */
+  /** Stops the clock and any recording, dropping a layer that never existed. */
   stop(): void {
     this.transport.stop();
-    this.recorder.stop();
-    this.armed = null;
-    this.recordingValue = null;
+    this.abandonRecording();
   }
 
   /**
-   * Abandons a pending or in-progress recording, keeping every finished track.
+   * Abandons a pending or in-progress recording, keeping every finished layer.
    *
    * Used when the mode changes underneath a recording: the take in progress
    * would be half chord and half melody, so it is dropped rather than stored.
    */
   cancelRecording(): void {
-    this.recorder.stop();
-    this.armed = null;
-    this.recordingValue = null;
+    this.abandonRecording();
   }
 
-  /** Forgets every track. */
+  /** Forgets every layer. */
   clear(): void {
     this.stop();
     this.tracksValue.clear();
+  }
+
+  /** Forgets one layer, retiring its channel with it. */
+  clearTrack(id: TrackId): void {
+    if (this.recording?.trackId === id || this.armed?.trackId === id) this.abandonRecording();
+    if (this.displaced?.trackId === id) this.displaced = null;
+
+    this.tracksValue.delete(id);
+
+    if (!this.hasTake && this.recording === null) this.transport.stop();
   }
 
   /** Silences or restores a layer. The take is untouched. */
@@ -201,10 +256,7 @@ export class Looper {
 
   /** Where the playhead is in the loop, in beats from the loop's own start. */
   positionBeats(ctxTime: number): number {
-    const loopBeats = this.transport.loopBeats;
-    const local = this.localBeat(ctxTime) % loopBeats;
-
-    return local < 0 ? local + loopBeats : local;
+    return this.wrap(this.transport.elapsedBeats(ctxTime) - this.originBeat);
   }
 
   /**
@@ -226,14 +278,21 @@ export class Looper {
       sounding = event;
     }
 
-    return sounding;
+    // Before a take's first event, the loop is still holding the note from the
+    // previous pass: the seam does not silence anything, so the last event is
+    // what is sounding.
+    return sounding ?? track.take.events.at(-1) ?? null;
   }
 
   /** Feeds one frame of intent to the recorder while a recording is running. */
   capture(intent: RecordedIntent, volume: number, tilt: number, ctxTime: number): void {
-    if (this.recordingValue === null) return;
+    if (this.recording === null) return;
 
-    this.recorder.capture(intent, volume, tilt, this.recordedBeats(ctxTime));
+    // The take is stored against the *loop's* grid, not the recording's own
+    // start: a layer may begin at any bar, and rotating it into place is what
+    // lets it keep time with the layers already playing.
+    const beat = this.wrap(this.recordOffset + this.recordedBeats(ctxTime));
+    this.recorder.capture(intent, volume, tilt, beat);
   }
 
   /** Advances the loop and returns the events due since the last call. */
@@ -242,72 +301,104 @@ export class Looper {
       this.beginRecording();
     }
 
-    if (this.recordingValue !== null && this.recordedBeats(ctxTime) >= this.transport.loopBeats) {
+    if (this.recording !== null && this.recordedBeats(ctxTime) >= this.transport.loopBeats) {
       this.finishRecording();
     }
 
     return this.dueHits(ctxTime);
   }
 
-  /** Beats since the loop's beat 0, which is what the playhead reads. */
-  private localBeat(ctxTime: number): number {
-    return this.transport.elapsedBeats(ctxTime) - this.originBeat;
-  }
-
-  /**
-   * Beats since the recording began.
-   *
-   * A later track begins at the top of the loop, so its start is many beats from
-   * the loop's origin — but its take is still measured from its own first beat,
-   * which is what makes every take interchangeable on the same grid.
-   */
+  /** Beats since the recording began. */
   private recordedBeats(ctxTime: number): number {
     return this.transport.elapsedBeats(ctxTime) - this.recordOriginBeat;
   }
 
-  /** The first loop boundary strictly after `ctxTime`. */
-  private nextLoopTop(ctxTime: number): number {
+  /** Wraps a beat count into `[0, loopBeats)`. */
+  private wrap(beats: number): number {
     const loopBeats = this.transport.loopBeats;
-    const loops =
-      Math.floor((this.transport.elapsedBeats(ctxTime) - this.originBeat) / loopBeats) + 1;
+    const wrapped = beats % loopBeats;
 
-    return this.originBeat + loops * loopBeats;
+    return wrapped < 0 ? wrapped + loopBeats : wrapped;
+  }
+
+  private startClockIfNeeded(ctxTime: number): void {
+    if (this.transport.isPlaying) return;
+
+    this.transport.start(ctxTime);
+    this.originBeat = 0;
+    this.lastPlayedBeat = -EPSILON;
   }
 
   private beginRecording(): void {
     const armed = this.armed;
     if (!armed) return;
 
-    if (armed.setsOrigin) this.originBeat = armed.targetBeat;
-    this.recordOriginBeat = armed.targetBeat;
+    // The first layer sets the loop's phase at its own bar line. Later layers
+    // are rotated onto that grid, so they can begin at any bar rather than
+    // waiting for the top of the loop.
+    if (armed.kind === "new" && !this.hasTake) this.originBeat = armed.targetBeat;
 
-    // Re-recording a layer replaces it, so the old take goes now rather than
-    // playing underneath the new one. Its mute survives the re-record.
-    const existing = this.tracksValue.get(armed.track.id);
-    this.tracksValue.set(armed.track.id, {
-      ...armed.track,
+    const existing = this.tracksValue.get(armed.trackId);
+    if (existing?.take) this.displaced = { trackId: existing.id, take: existing.take };
+
+    // Re-recording a layer replaces it, so the old take stops sounding now
+    // rather than playing underneath the new one. Its mute survives.
+    this.tracksValue.set(armed.trackId, {
+      id: armed.trackId,
+      label: armed.label,
+      mode: armed.mode,
       take: null,
       muted: existing?.muted ?? false,
     });
 
+    this.recordOriginBeat = armed.targetBeat;
+    this.recordOffset = this.wrap(this.recordOriginBeat - this.originBeat);
     this.recorder.start();
-    this.recordingValue = armed.track.id;
+    this.recording = { kind: armed.kind, trackId: armed.trackId };
     this.armed = null;
   }
 
   private finishRecording(): void {
-    const id = this.recordingValue;
-    if (id === null) return;
+    const recording = this.recording;
+    if (!recording) return;
 
     const take = this.recorder.finish({
       bpm: this.transport.tempo,
       loopBeats: this.transport.loopBeats,
     });
 
-    const existing = this.tracksValue.get(id);
-    if (existing) this.tracksValue.set(id, { ...existing, take });
+    const existing = this.tracksValue.get(recording.trackId);
+    if (existing) this.tracksValue.set(recording.trackId, { ...existing, take });
 
-    this.recordingValue = null;
+    this.recording = null;
+    this.displaced = null;
+  }
+
+  /**
+   * Drops whatever recording is open.
+   *
+   * A cancelled *new* layer never existed, so it goes. A cancelled *rewrite*
+   * puts back the take it displaced, because changing your mind about redoing a
+   * layer must not destroy it.
+   */
+  private abandonRecording(): void {
+    const target = this.recording?.trackId ?? this.armed?.trackId ?? null;
+    const kind = this.recording?.kind ?? this.armed?.kind ?? null;
+
+    this.recorder.stop();
+    this.armed = null;
+    this.recording = null;
+
+    if (target === null) return;
+
+    if (this.displaced?.trackId === target) {
+      const track = this.tracksValue.get(target);
+      if (track) this.tracksValue.set(target, { ...track, take: this.displaced.take });
+      this.displaced = null;
+      return;
+    }
+
+    if (kind === "new") this.tracksValue.delete(target);
   }
 
   /**
@@ -344,16 +435,33 @@ export class Looper {
   }
 }
 
+/** What the transport readout needs to say. */
+export interface LooperStatus {
+  readonly state: LooperState;
+  readonly loopBars: number;
+  readonly hasTake: boolean;
+  /** The layer being recorded, if any. */
+  readonly recordingLabel?: string | null;
+  /** Beats until an armed recording begins. */
+  readonly countdownBeats?: number;
+}
+
 /** A short status line for the transport readout. */
-export function describeLooper(state: LooperState, loopBars: number, hasTake: boolean): string {
-  switch (state) {
-    case "armed":
-      return "Armed…";
+export function describeLooper(status: LooperStatus): string {
+  const bars = `${status.loopBars} bar${status.loopBars === 1 ? "" : "s"}`;
+
+  switch (status.state) {
+    case "armed": {
+      // A count-in the player can read, rather than a wait they have to guess at.
+      const beats = Math.ceil(status.countdownBeats ?? 0);
+
+      return beats > 0 ? `Armed · Rec in ${beats}` : "Armed…";
+    }
     case "recording":
-      return `Recording · ${loopBars} bar${loopBars === 1 ? "" : "s"}`;
+      return `Recording · ${status.recordingLabel ?? bars}`;
     case "playing":
-      return `Looping · ${loopBars} bar${loopBars === 1 ? "" : "s"}`;
+      return `Looping · ${bars}`;
     default:
-      return hasTake ? "Stopped" : "Idle";
+      return status.hasTake ? "Stopped" : "Idle";
   }
 }

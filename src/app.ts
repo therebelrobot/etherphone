@@ -27,7 +27,7 @@ import {
 } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
-import { describeLooper, Looper, trackLabel } from "./music/looper";
+import { describeLooper, Looper } from "./music/looper";
 import type { LoopTrack, TrackId } from "./music/looper";
 import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
@@ -85,6 +85,24 @@ type TransportCue = Omit<TransportCueFrame, "canvasWidth" | "canvasHeight">;
 
 /** The id of the one-handed toggle, which is not a mode or a value. */
 const ONE_HANDED_ID = "one-handed";
+
+/**
+ * The Layers menu, once a layer is in hand.
+ *
+ * The options are `"<layer id>:<action>"`, so one cluster can show what can be
+ * done to whichever layer was handed over.
+ */
+const LAYER_ACTION_MUTE = "mute";
+const LAYER_ACTION_REWRITE = "rewrite";
+const LAYER_ACTION_CLEAR = "clear";
+const LAYERS_BACK_ID = "layers-back";
+
+/** Splits a layer action id, e.g. `layer-2:rewrite`. */
+function parseLayerAction(id: string): { trackId: string; action: string } | null {
+  const [trackId, action] = id.split(":");
+
+  return trackId && action ? { trackId, action } : null;
+}
 
 /**
  * A number remembered between visits, kept only if it is still one the picker
@@ -471,18 +489,29 @@ export class GestureSynthApp {
   }
 
   /**
-   * Arms a recording into the layer the current mode plays.
+   * Arms a recording of a **new layer** in the current mode.
    *
-   * Recording in Chords mode fills (or refills) the chord layer, and in Mono
-   * mode the melody layer — so layering a lead over a chord bed is just: record
-   * the chords, switch mode, record the melody. Both keep playing.
+   * Recording adds rather than replaces, so a part can be built up — chords,
+   * then another chord part, then a melody — and a misflick never destroys
+   * anything. Redoing one layer is {@link rewriteLoop}, which has to be asked
+   * for by name.
    */
   private recordLoop(): void {
-    this.looper.record(this.audioTime(), {
-      id: this.mode,
-      label: trackLabel(this.mode),
-      mode: this.mode,
-    });
+    this.looper.record(this.audioTime(), this.mode);
+  }
+
+  /** Arms a re-recording of one layer, replacing what it holds. */
+  private rewriteLoop(id: TrackId): void {
+    this.looper.rewrite(this.audioTime(), id);
+  }
+
+  /** Throws one layer away, retiring its channel with it. */
+  private clearLayer(id: TrackId): void {
+    this.looper.clearTrack(id);
+    this.layers.get(id)?.stop();
+    this.layers.delete(id);
+
+    if (this.layerFocus === id) this.layerFocus = null;
   }
 
   /** Starts every stored layer from the loop's beginning. */
@@ -814,11 +843,13 @@ export class GestureSynthApp {
 
     const { state } = this.looper;
 
-    this.els.transportDisplay.textContent = describeLooper(
+    this.els.transportDisplay.textContent = describeLooper({
       state,
-      this.transport.loopBars,
-      this.looper.hasTake,
-    );
+      loopBars: this.transport.loopBars,
+      hasTake: this.looper.hasTake,
+      recordingLabel: this.looper.recordingLabel,
+      countdownBeats: this.looper.countdownBeats(ctxTime),
+    });
 
     this.els.recordButton.classList.toggle("active", state === "recording" || state === "armed");
 
@@ -1113,6 +1144,7 @@ export class GestureSynthApp {
     if (!update.isOpen) {
       // The next open starts on the vocabulary again, not wherever this one was.
       this.menuId = "vocabulary";
+      this.layerFocus = null;
       return false;
     }
 
@@ -1120,7 +1152,7 @@ export class GestureSynthApp {
     drawCluster(this.els.ctx, update.menus, MENUS_STYLE);
     drawCluster(this.els.ctx, update.options, OPTIONS_STYLE);
 
-    this.hud.setNote(this.menuLabel(update.menus));
+    this.hud.setNote(this.menuTitle(update.menus));
     this.hud.setQuality(
       update.options.hoveredId === null ? "Control" : this.labelFor(update.options),
       false,
@@ -1132,6 +1164,22 @@ export class GestureSynthApp {
   /** The label under the readout: the menu in play, and the option hovered. */
   private menuLabel(frame: { items: readonly MenuOption[]; activeId: string | null }): string {
     return frame.items.find((item) => item.id === frame.activeId)?.label ?? "MENU";
+  }
+
+  /**
+   * What the readout calls the menu — the layer's name while one is in hand.
+   *
+   * Drilling into a layer changes what the options mean without changing which
+   * menu is in play, so the readout is the only place that can say *which* layer
+   * Rewrite and Clear would act on.
+   */
+  private menuTitle(frame: { items: readonly MenuOption[]; activeId: string | null }): string {
+    if (this.menuId === "layers" && this.layerFocus) {
+      const track = this.looper.tracks.find((candidate) => candidate.id === this.layerFocus);
+      if (track) return track.label;
+    }
+
+    return this.menuLabel(frame);
   }
 
   /** The values the current menu holds. */
@@ -1164,18 +1212,40 @@ export class GestureSynthApp {
 
     if (this.menuId === "layers") {
       const tracks = this.looper.tracks;
+      if (tracks.length === 0) {
+        return { layout: "radial", items: [{ id: "none", label: "No layers yet" }] };
+      }
 
-      // One entry per layer, and the menu stays open so a player can drop two
-      // parts out in one visit rather than reopening it each time.
-      const items: MenuOption[] = tracks.length
-        ? tracks.map((track) => ({
-            id: track.id,
-            label: `${track.label}: ${track.muted ? "off" : "on"}`,
-            keepsMenuOpen: true,
-          }))
-        : [{ id: "none", label: "No layers yet" }];
+      // With a layer in hand, the menu shows what can be done to *it*. Those are
+      // the destructive options — redo it, throw it away — so a second step to
+      // reach them is the point, not an accident.
+      const focused = tracks.find((track) => track.id === this.layerFocus);
+      if (focused) {
+        return {
+          layout: "radial",
+          items: [
+            {
+              id: `${focused.id}:${LAYER_ACTION_MUTE}`,
+              label: focused.muted ? "Unmute" : "Mute",
+              keepsMenuOpen: true,
+            },
+            { id: `${focused.id}:${LAYER_ACTION_REWRITE}`, label: "Rewrite" },
+            { id: `${focused.id}:${LAYER_ACTION_CLEAR}`, label: "Clear" },
+            { id: LAYERS_BACK_ID, label: "Back", keepsMenuOpen: true },
+          ],
+        };
+      }
 
-      return { layout: "radial", items };
+      // One entry per layer; choosing one hands it over to be worked on. The
+      // menu stays open, so a player can drop two parts out in one visit.
+      return {
+        layout: "radial",
+        items: tracks.map((track) => ({
+          id: track.id,
+          label: `${track.label}${track.muted ? " · off" : ""}`,
+          keepsMenuOpen: true,
+        })),
+      };
     }
 
     if (this.menuId === "transport") {
@@ -1233,6 +1303,7 @@ export class GestureSynthApp {
       // A menu choice changes what the other cluster holds, so the menu stays
       // open and the right hand picks up from the new list.
       this.menuId = choice.id as MenuTopic;
+      this.layerFocus = null;
       return;
     }
 
@@ -1258,8 +1329,30 @@ export class GestureSynthApp {
     }
 
     if (this.menuId === "layers") {
-      if (this.looper.tracks.some((track) => track.id === choice.id)) {
-        this.toggleLayer(choice.id as TrackId);
+      if (choice.id === LAYERS_BACK_ID) {
+        this.layerFocus = null;
+        return;
+      }
+
+      const action = parseLayerAction(choice.id);
+
+      // No action means a layer was chosen: hand it over for the next step.
+      if (!action) {
+        if (this.looper.tracks.some((track) => track.id === choice.id)) this.layerFocus = choice.id;
+        return;
+      }
+
+      switch (action.action) {
+        case LAYER_ACTION_MUTE:
+          this.toggleLayer(action.trackId);
+          return;
+        case LAYER_ACTION_REWRITE:
+          this.layerFocus = null;
+          this.rewriteLoop(action.trackId);
+          return;
+        case LAYER_ACTION_CLEAR:
+          this.clearLayer(action.trackId);
+          return;
       }
       return;
     }
@@ -1291,6 +1384,8 @@ export class GestureSynthApp {
 
   /** Which menu the left hand has chosen, and the right hand is choosing within. */
   private menuId: MenuTopic = "vocabulary";
+  /** Which layer the Layers menu is working on, once one has been handed over. */
+  private layerFocus: TrackId | null = null;
   /** Whether one hand drives the whole menu, a stage at a time. */
   private singleHanded = false;
 
