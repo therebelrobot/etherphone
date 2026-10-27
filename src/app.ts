@@ -41,9 +41,10 @@ import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
 import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
-import { MenuController, isModeSwitch, menuOptionsFor } from "./ui/menu-controller";
-import { drawRadialMenu } from "./ui/radial-menu";
-import type { MenuOption } from "./ui/radial-menu";
+import { MenuController, isMenuTopic, isModeSwitch, menuOptionsFor } from "./ui/menu-controller";
+import type { MenuTopic } from "./ui/menu-controller";
+import { drawMenu } from "./ui/radial-menu";
+import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
 import { startCamera } from "./vision/camera";
@@ -178,9 +179,7 @@ export class GestureSynthApp {
   /** Wires the key, gesture-map, instrument, and instrument-loading controls. */
   private bindControls(): void {
     this.els.keySelect.addEventListener("change", () => {
-      this.tonicFrequency = Number(this.els.keySelect.value);
-      this.keyName = readKeyName(this.els.keySelect);
-      this.refreshHelp();
+      this.setKey(this.els.keySelect.value);
     });
 
     this.els.gestureMapSelect.addEventListener("change", () => {
@@ -196,7 +195,7 @@ export class GestureSynthApp {
     });
 
     this.els.instrumentSelect.addEventListener("change", () => {
-      this.synth.setInstrument(this.els.instrumentSelect.value);
+      this.setInstrument(this.els.instrumentSelect.value);
     });
 
     // The file inputs are hidden; the buttons are what the player sees, and
@@ -276,6 +275,20 @@ export class GestureSynthApp {
     }
 
     select.value = selectedId;
+  }
+
+  /** Switches key, and keeps the readouts in step. */
+  private setKey(value: string): void {
+    this.els.keySelect.value = value;
+    this.tonicFrequency = Number(value);
+    this.keyName = readKeyName(this.els.keySelect);
+    this.refreshHelp();
+  }
+
+  /** Switches instrument, by the picker's id. */
+  private setInstrument(id: string): void {
+    this.els.instrumentSelect.value = id;
+    this.synth.setInstrument(id);
   }
 
   /** Switches the gesture vocabulary and keeps the readouts in step. */
@@ -510,7 +523,7 @@ export class GestureSynthApp {
 
     const update = this.menu.update(
       {
-        options: this.menuOptions(),
+        ...this.menuInput(),
         bothClosed,
         cursor: right ? this.cursorFor(right) : null,
         canvasWidth: this.els.canvas.width,
@@ -528,42 +541,69 @@ export class GestureSynthApp {
 
     if (update.committed !== null) {
       this.applyMenuChoice(update.committed);
-      return true;
     }
 
-    if (!update.isOpen) return false;
+    if (!update.isOpen) {
+      // The next open starts at the ring again, not wherever this one ended up.
+      this.menuTopic = null;
+      return false;
+    }
 
     this.hud.setNote(update.hoveredId === null ? "MENU" : this.labelFor(update.hoveredId));
     this.hud.setQuality("Control", false);
-    drawRadialMenu(this.els.ctx, update);
+    drawMenu(this.els.ctx, update);
 
     return true;
   }
 
-  /** The label of a menu option, for the readout. */
-  private labelFor(id: string): string {
-    return this.menuOptions().find((option) => option.id === id)?.label ?? id;
+  /** What the menu should show: the ring, or a topic's list. */
+  private menuInput(): { layout: MenuLayout; options: readonly MenuOption[] } {
+    if (this.menuTopic === null) {
+      const select = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
+
+      const vocabulary = Array.from(select.options).map((option) => ({
+        id: option.value,
+        label: option.textContent ?? option.value,
+      }));
+
+      return { layout: "radial", options: menuOptionsFor(this.mode, vocabulary) };
+    }
+
+    const select = this.menuTopic === "key" ? this.els.keySelect : this.els.instrumentSelect;
+
+    return {
+      layout: "list",
+      options: Array.from(select.options).map((option) => ({
+        id: option.value,
+        label: option.textContent ?? option.value,
+      })),
+    };
   }
 
-  /**
-   * The options the menu offers: whichever picker currently occupies the shared
-   * slot, plus a switch to the other mode.
-   */
-  private menuOptions(): readonly MenuOption[] {
-    const select = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
-
-    const vocabulary = Array.from(select.options).map((option) => ({
-      id: option.value,
-      label: option.textContent ?? option.value,
-    }));
-
-    return menuOptionsFor(this.mode, vocabulary);
+  /** The label of a menu option, for the readout. */
+  private labelFor(id: string): string {
+    return this.menuInput().options.find((option) => option.id === id)?.label ?? id;
   }
 
   /** Applies a committed menu choice to whatever it came from. */
   private applyMenuChoice(id: string): void {
+    if (isMenuTopic(id)) {
+      this.menuTopic = id;
+      return;
+    }
+
     if (isModeSwitch(id)) {
       this.setMode(id);
+      return;
+    }
+
+    if (this.menuTopic === "key") {
+      this.setKey(id);
+      return;
+    }
+
+    if (this.menuTopic === "instrument") {
+      this.setInstrument(id);
       return;
     }
 
@@ -574,7 +614,12 @@ export class GestureSynthApp {
     }
   }
 
-  /** The right hand's palm centre, in canvas coordinates, for the menu cursor. */
+  /** Which picker the menu is showing: the ring, or a topic's list. */
+  private menuTopic: MenuTopic | null = null;
+
+  /**
+   * The right hand's palm centre, in canvas coordinates, for the menu cursor.
+   */
   private cursorFor(hand: Hand): CanvasPoint | null {
     const { videoWidth, videoHeight } = this.els.video;
     if (!videoWidth || !videoHeight) return null;

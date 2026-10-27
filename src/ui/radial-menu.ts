@@ -30,7 +30,11 @@ export interface MenuOption {
 
 /** Everything one frame of the menu needs to draw itself. */
 export interface MenuFrame {
+  readonly layout: MenuLayout;
+  /** Options placed around the anchor, when the layout is a ring. */
   readonly slots: readonly RadialSlot[];
+  /** Options stacked down the canvas, when the layout is a list. */
+  readonly rows: readonly ListRow[];
   readonly centerX: number;
   readonly centerY: number;
   /** Where the cursor is, or `null` when no hand is driving it. */
@@ -178,8 +182,12 @@ export function easeOutBack(t: number): number {
  * Each option starts a little later than the one before it, so the menu arrives
  * as a wave instead of all at once.
  */
-export function fanProgress(index: number, elapsedMs: number): number {
-  return clamp01((elapsedMs - index * CONTROL.fanStaggerMs) / CONTROL.fanOutMs);
+export function fanProgress(
+  index: number,
+  elapsedMs: number,
+  staggerMs: number = CONTROL.fanStaggerMs,
+): number {
+  return clamp01((elapsedMs - index * staggerMs) / CONTROL.fanOutMs);
 }
 
 /** Where an option sits, and how it is shaped, part-way through the fan-out. */
@@ -215,6 +223,85 @@ export function fanState(
     radius: CONTROL.optionRadius * scale,
     stretch: Math.sin(Math.PI * progress) * 0.45,
     alpha: scale,
+  };
+}
+
+/** How a menu lays its options out. */
+export type MenuLayout = "radial" | "list";
+
+/** One row of a list menu, in canvas coordinates. */
+export interface ListRow {
+  readonly id: string;
+  readonly label: string;
+  /** Centre of the row. */
+  readonly y: number;
+  readonly height: number;
+}
+
+/**
+ * Lays options out as rows down a tall vertical band, centred on the canvas.
+ *
+ * A ring stops working somewhere around eight options — twelve keys would need
+ * more circumference than the circle has — and a list of names is easier to read
+ * and to hit with a hand anyway: the height picks the row, so the choice is one
+ * dimension rather than two.
+ */
+export function layoutList(options: readonly MenuOption[], canvasHeight: number): ListRow[] {
+  if (options.length === 0) return [];
+
+  const band = canvasHeight * (CONTROL.listBottomFraction - CONTROL.listTopFraction);
+  const height = Math.min(CONTROL.listMaxRowHeight, band / options.length);
+  const start = (canvasHeight - height * options.length) / 2;
+
+  return options.map((option, index) => ({
+    id: option.id,
+    label: option.label,
+    y: start + (index + 0.5) * height,
+    height,
+  }));
+}
+
+/**
+ * The row a cursor is on, or `null` above or below the list.
+ *
+ * Only the height matters, deliberately: a hand does not have to be over the
+ * label horizontally, which keeps a coarse cursor from having to aim twice.
+ */
+export function listRowAt(rows: readonly ListRow[], cursor: CanvasPoint): ListRow | null {
+  for (const row of rows) {
+    if (cursor.y >= row.y - row.height / 2 && cursor.y < row.y + row.height / 2) {
+      return row;
+    }
+  }
+
+  return null;
+}
+
+/** Where a list row sits part-way through the fan-out. */
+export interface ListRowState {
+  readonly y: number;
+  readonly height: number;
+  readonly alpha: number;
+}
+
+/**
+ * The animated position of one row.
+ *
+ * Rows travel out of the middle of the list rather than the anchor, because the
+ * anchor is where the hand is and a list is not built around a point.
+ */
+export function listRowState(
+  row: ListRow,
+  index: number,
+  elapsedMs: number,
+  centerY: number,
+): ListRowState {
+  const eased = easeOutCubic(fanProgress(index, elapsedMs, CONTROL.listStaggerMs));
+
+  return {
+    y: centerY + (row.y - centerY) * eased,
+    height: row.height,
+    alpha: eased,
   };
 }
 
@@ -313,4 +400,76 @@ export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: Menu
 
   ctx.globalAlpha = 1;
   ctx.restore();
+}
+
+/** Draws one frame of a list menu. */
+export function drawListMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFrame): void {
+  if (!ctx) return;
+
+  const { rows, centerY, hoveredId, dwellProgress, elapsedMs } = frame;
+  const { width, height } = ctx.canvas;
+  const rowWidth = Math.min(CONTROL.listRowWidth, width * 0.8);
+
+  ctx.save();
+
+  ctx.globalAlpha = clamp01(elapsedMs / 200);
+  ctx.fillStyle = DIMMED;
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "16px monospace";
+
+  rows.forEach((row, index) => {
+    const state = listRowState(row, index, elapsedMs, centerY);
+    if (state.alpha <= 0.01) return;
+
+    const isHovered = row.id === hoveredId;
+    const left = (width - rowWidth) / 2;
+    const top = state.y - state.height / 2 + 3;
+    const barHeight = state.height - 6;
+
+    ctx.globalAlpha = state.alpha;
+
+    ctx.beginPath();
+    ctx.roundRect(left, top, rowWidth, barHeight, 6);
+    ctx.fillStyle = isHovered ? OPTION_HOVER : OPTION_IDLE;
+    ctx.fill();
+    ctx.lineWidth = isHovered ? 2 : 1;
+    ctx.strokeStyle = isHovered ? GOLD : EDGE;
+    ctx.stroke();
+
+    // The dwell fills the row from the left, so the commit is never a surprise.
+    if (isHovered && dwellProgress > 0) {
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = "rgba(232, 161, 61, 0.22)";
+      ctx.fillRect(left, top, rowWidth * dwellProgress, barHeight);
+      ctx.restore();
+    }
+
+    ctx.fillStyle = GOLD;
+    ctx.fillText(row.label, width / 2, state.y);
+
+    ctx.globalAlpha = 1;
+  });
+
+  ctx.globalAlpha = clamp01(elapsedMs / 200) * 0.75;
+  ctx.font = "13px monospace";
+  ctx.fillStyle = GOLD;
+  ctx.fillText(DISMISS_HINT, width / 2, 44);
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+/** Draws one frame of whichever layout the menu is using. */
+export function drawMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFrame): void {
+  if (frame.layout === "list") {
+    drawListMenu(ctx, frame);
+    return;
+  }
+
+  drawRadialMenu(ctx, frame);
 }

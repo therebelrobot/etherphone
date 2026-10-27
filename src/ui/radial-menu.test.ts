@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL } from "../config/constants";
-import { easeOutBack, fanProgress, fanState, fitAnchor, layoutRadial, slotAt } from "./radial-menu";
+import {
+  easeOutBack,
+  fanProgress,
+  fanState,
+  fitAnchor,
+  layoutList,
+  layoutRadial,
+  listRowAt,
+  listRowState,
+  slotAt,
+} from "./radial-menu";
 
 const THREE = [
   { id: "a", label: "A" },
@@ -17,6 +27,112 @@ function cursorAt(angle: number, distance = 150) {
     y: CENTER.y + Math.sin(angle) * distance,
   };
 }
+
+describe("layoutList", () => {
+  const TWELVE = Array.from({ length: 12 }, (_, index) => ({
+    id: `k${index}`,
+    label: `Key ${index}`,
+  }));
+
+  it("gives every option a row", () => {
+    expect(layoutList(TWELVE, 900)).toHaveLength(TWELVE.length);
+  });
+
+  it("stacks the rows top to bottom, in order", () => {
+    const rows = layoutList(TWELVE, 900);
+
+    for (let index = 1; index < rows.length; index += 1) {
+      expect(rows[index].y).toBeGreaterThan(rows[index - 1].y);
+    }
+  });
+
+  it("centres the list on the canvas", () => {
+    const rows = layoutList(TWELVE, 900);
+    const middle = (rows[0].y + rows.at(-1)!.y) / 2;
+
+    expect(middle).toBeCloseTo(450, 0);
+  });
+
+  it("keeps the rows within the band, so none is off screen", () => {
+    const rows = layoutList(TWELVE, 900);
+
+    expect(rows[0].y - rows[0].height / 2).toBeGreaterThan(0);
+    expect(rows.at(-1)!.y + rows.at(-1)!.height / 2).toBeLessThan(900);
+  });
+
+  it("caps the row height, so a short list does not sprawl", () => {
+    const rows = layoutList(THREE, 900);
+
+    expect(rows[0].height).toBeLessThanOrEqual(CONTROL.listMaxRowHeight);
+  });
+
+  it("shrinks the rows rather than overflowing when there are many", () => {
+    const many = Array.from({ length: 60 }, (_, index) => ({
+      id: `k${index}`,
+      label: `K${index}`,
+    }));
+    const rows = layoutList(many, 900);
+
+    expect(rows.at(-1)!.y + rows.at(-1)!.height / 2).toBeLessThan(900);
+    expect(rows[0].height).toBeLessThan(CONTROL.listMaxRowHeight);
+  });
+
+  it("has no rows when there are no options", () => {
+    expect(layoutList([], 900)).toEqual([]);
+  });
+});
+
+describe("listRowAt", () => {
+  const rows = layoutList(
+    Array.from({ length: 12 }, (_, index) => ({ id: `k${index}`, label: `K${index}` })),
+    900,
+  );
+
+  it("picks the row containing the cursor's height", () => {
+    expect(listRowAt(rows, { x: 0, y: rows[0].y })?.id).toBe("k0");
+    expect(listRowAt(rows, { x: 0, y: rows[5].y })?.id).toBe("k5");
+  });
+
+  it("ignores the horizontal position, so a hand does not have to aim twice", () => {
+    expect(listRowAt(rows, { x: 5, y: rows[3].y })?.id).toBe("k3");
+    expect(listRowAt(rows, { x: 1275, y: rows[3].y })?.id).toBe("k3");
+  });
+
+  it("picks nothing above the first row or below the last", () => {
+    expect(listRowAt(rows, { x: 0, y: rows[0].y - rows[0].height })).toBeNull();
+    expect(listRowAt(rows, { x: 0, y: rows.at(-1)!.y + rows.at(-1)!.height })).toBeNull();
+  });
+
+  it("picks nothing when there are no rows", () => {
+    expect(listRowAt([], { x: 0, y: 400 })).toBeNull();
+  });
+});
+
+describe("listRowState", () => {
+  const rows = layoutList(THREE, 900);
+
+  it("starts every row at the middle of the list", () => {
+    const state = listRowState(rows[0], 0, 0, 450);
+
+    expect(state.y).toBeCloseTo(450);
+    expect(state.alpha).toBeCloseTo(0);
+  });
+
+  it("lands each row on its own spot", () => {
+    const state = listRowState(rows[2], 2, CONTROL.fanOutMs + CONTROL.listStaggerMs * 2, 450);
+
+    expect(state.y).toBeCloseTo(rows[2].y);
+    expect(state.alpha).toBeCloseTo(1);
+  });
+
+  it("starts each row later than the last, which is the wave", () => {
+    const at = CONTROL.fanOutMs / 2;
+
+    expect(fanProgress(0, at, CONTROL.listStaggerMs)).toBeGreaterThan(
+      fanProgress(1, at, CONTROL.listStaggerMs),
+    );
+  });
+});
 
 describe("fitAnchor", () => {
   const MARGIN = CONTROL.radius + CONTROL.optionRadius;

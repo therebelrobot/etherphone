@@ -18,12 +18,14 @@
  */
 import { CONTROL } from "../config/constants";
 import { DwellStabilizer } from "../music/stabilizer";
-import type { CanvasPoint, InstrumentMode, RadialSlot } from "../types";
-import { layoutRadial, slotAt, fitAnchor } from "./radial-menu";
-import type { MenuOption } from "./radial-menu";
+import type { CanvasPoint, InstrumentMode } from "../types";
+import { layoutList, layoutRadial, listRowAt, slotAt, fitAnchor } from "./radial-menu";
+import type { MenuFrame, MenuLayout, MenuOption } from "./radial-menu";
 
 /** One frame of input from the hands and the canvas. */
 export interface MenuInput {
+  /** How the options should be laid out. */
+  readonly layout: MenuLayout;
   /** The options to offer, which depend on the instrument mode. */
   readonly options: readonly MenuOption[];
   /** Whether both hands are closed. */
@@ -35,17 +37,8 @@ export interface MenuInput {
 }
 
 /** What the caller needs to draw, and what it should do about it. */
-export interface MenuUpdate {
+export interface MenuUpdate extends MenuFrame {
   readonly isOpen: boolean;
-  readonly slots: readonly RadialSlot[];
-  readonly centerX: number;
-  readonly centerY: number;
-  readonly cursor: CanvasPoint | null;
-  readonly hoveredId: string | null;
-  /** How far the dwell on the hovered option has filled, 0..1. */
-  readonly dwellProgress: number;
-  /** Milliseconds since the menu opened, which drives the fan-out. */
-  readonly elapsedMs: number;
   /** The choice that committed on this frame, if any. */
   readonly committed: string | null;
   /** True on the frame the menu opened, so the caller can silence the instrument. */
@@ -62,8 +55,27 @@ export interface MenuControllerOptions {
 }
 
 /**
+ * A setting with too many values for a ring, which opens a list instead.
+ *
+ * Twelve keys do not fit around a circle — they would need more circumference
+ * than there is — and a column of names is easier to read and to hit anyway.
+ */
+export type MenuTopic = "key" | "instrument";
+
+/** The topics the ring offers, alongside the vocabulary and the mode switch. */
+export const MENU_TOPICS: readonly MenuOption[] = [
+  { id: "key", label: "Key", keepsMenuOpen: true },
+  { id: "instrument", label: "Instrument", keepsMenuOpen: true },
+];
+
+/** Whether a committed id opens a topic's list rather than applying a choice. */
+export function isMenuTopic(id: string): id is MenuTopic {
+  return id === "key" || id === "instrument";
+}
+
+/**
  * The menu's options for a mode: the vocabulary it is currently using, plus a
- * switch to the other one.
+ * switch to the other one, plus the settings that need a list.
  *
  * The vocabulary the menu offers depends on the mode, which on its own would
  * strand the gesture maps whenever the instrument was in mono mode — they would
@@ -80,6 +92,7 @@ export function menuOptionsFor(
   return [
     ...vocabulary,
     { id: otherMode, label: otherMode === "mono" ? "Mono" : "Chords", keepsMenuOpen: true },
+    ...MENU_TOPICS,
   ];
 }
 
@@ -168,16 +181,27 @@ export class MenuController {
     }
 
     const anchor = this.anchor ?? { x: input.canvasWidth / 2, y: input.canvasHeight / 2 };
+    const isList = input.layout === "list";
+
+    // A ring is built around the hand; a list is a column down the canvas, so it
+    // has no anchor of its own to be centred on.
+    const centerX = isList ? input.canvasWidth / 2 : anchor.x;
+    const centerY = isList ? input.canvasHeight / 2 : anchor.y;
 
     this.trackSteering(input.cursor);
 
-    const slots = layoutRadial(input.options, anchor.x, anchor.y);
-    const hovered =
-      this.steering && input.cursor ? slotAt(slots, input.cursor, anchor.x, anchor.y) : null;
-    const hoveredId = hovered?.id ?? null;
+    const slots = isList ? [] : layoutRadial(input.options, centerX, centerY);
+    const rows = isList ? layoutList(input.options, input.canvasHeight) : [];
+
+    let hoveredId: string | null = null;
+    if (this.steering && input.cursor) {
+      hoveredId = isList
+        ? (listRowAt(rows, input.cursor)?.id ?? null)
+        : (slotAt(slots, input.cursor, centerX, centerY)?.id ?? null);
+    }
 
     // Pointing at anything keeps the menu alive; only idling times it out.
-    if (hovered) this.idleSince = now;
+    if (hoveredId) this.idleSince = now;
 
     const committed = this.dwell.update(hoveredId, now);
     let applied: string | null = null;
@@ -188,8 +212,8 @@ export class MenuController {
 
       if (option?.keepsMenuOpen) {
         // The caller swaps the options under us — the mode switch changes what
-        // the menu offers — so stay open, and make the player move again before
-        // the same option can commit a second time.
+        // the menu offers, and a topic opens a list — so stay open, and make the
+        // player move again before the same option can commit a second time.
         applied = committed;
         suppressHover = true;
         this.dwell.reset();
@@ -198,20 +222,22 @@ export class MenuController {
         this.idleSince = now;
       } else {
         this.close();
-        return { ...this.closedUpdate(anchor.x, anchor.y), committed };
+        return { ...this.closedUpdate(centerX, centerY), committed };
       }
     }
 
     if (now - this.idleSince > this.idleTimeoutMs) {
       this.close();
-      return this.closedUpdate(anchor.x, anchor.y);
+      return this.closedUpdate(centerX, centerY);
     }
 
     return {
       isOpen: true,
+      layout: input.layout,
       slots,
-      centerX: anchor.x,
-      centerY: anchor.y,
+      rows,
+      centerX,
+      centerY,
       cursor: input.cursor,
       hoveredId: suppressHover ? null : hoveredId,
       dwellProgress: suppressHover || hoveredId === null ? 0 : this.dwell.progress(now),
@@ -254,7 +280,9 @@ export class MenuController {
   private closedUpdate(centerX: number, centerY: number): MenuUpdate {
     return {
       isOpen: false,
+      layout: "radial",
       slots: [],
+      rows: [],
       centerX,
       centerY,
       cursor: null,

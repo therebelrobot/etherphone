@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL } from "../config/constants";
 import type { CanvasPoint } from "../types";
-import { isModeSwitch, MenuController, menuOptionsFor } from "./menu-controller";
+import { isMenuTopic, isModeSwitch, MenuController, menuOptionsFor } from "./menu-controller";
 
 const OPTIONS = [
   { id: "classic", label: "Classic" },
@@ -37,6 +37,7 @@ function pointFrom(
 
 function input(overrides: Partial<Parameters<MenuController["update"]>[0]> = {}) {
   return {
+    layout: "radial" as const,
     options: OPTIONS,
     bothClosed: false,
     cursor: null,
@@ -223,14 +224,29 @@ describe("menuOptionsFor", () => {
   });
 
   it("offers the other mode, so the other vocabulary is reachable", () => {
-    expect(menuOptionsFor("chord", vocabulary).at(-1)).toMatchObject({
+    const findSwitch = (options: readonly { id: string }[]) =>
+      options.find((option) => option.id === "mono" || option.id === "chord");
+
+    expect(findSwitch(menuOptionsFor("chord", vocabulary))).toMatchObject({
       id: "mono",
       keepsMenuOpen: true,
     });
-    expect(menuOptionsFor("mono", vocabulary).at(-1)).toMatchObject({
+    expect(findSwitch(menuOptionsFor("mono", vocabulary))).toMatchObject({
       id: "chord",
       keepsMenuOpen: true,
     });
+  });
+
+  it("offers the topics that open a list", () => {
+    const options = menuOptionsFor("chord", vocabulary);
+
+    expect(options.filter((option) => isMenuTopic(option.id)).map((option) => option.id)).toEqual([
+      "key",
+      "instrument",
+    ]);
+    expect(options.filter((option) => isMenuTopic(option.id)).every((o) => o.keepsMenuOpen)).toBe(
+      true,
+    );
   });
 
   it("recognises the mode switch ids and nothing else", () => {
@@ -238,6 +254,13 @@ describe("menuOptionsFor", () => {
     expect(isModeSwitch("mono")).toBe(true);
     expect(isModeSwitch("triad")).toBe(false);
     expect(isModeSwitch("harp")).toBe(false);
+  });
+
+  it("recognises the topic ids and nothing else", () => {
+    expect(isMenuTopic("key")).toBe(true);
+    expect(isMenuTopic("instrument")).toBe(true);
+    expect(isMenuTopic("triad")).toBe(false);
+    expect(isMenuTopic("mono")).toBe(false);
   });
 });
 
@@ -296,6 +319,116 @@ describe("MenuController keeping the menu open", () => {
 
     expect(committed.committed).toBe("triad");
     expect(committed.isOpen).toBe(false);
+  });
+});
+
+describe("MenuController list layout", () => {
+  const KEY_VALUES = Array.from({ length: 12 }, (_, index) => ({
+    id: `key-${index}`,
+    label: `Key ${index}`,
+  }));
+
+  /** A cursor at a given height, far from where the menu opened. */
+  function cursorAtHeight(y: number): CanvasPoint {
+    return { x: WIDTH / 2, y };
+  }
+
+  it("lays the options down the canvas rather than around the hand", () => {
+    const controller = makeController();
+    const options = KEY_VALUES;
+
+    controller.update(input({ layout: "list", options, bothClosed: true, cursor: HAND }), 0);
+    const opened = HOLD;
+    const frame = controller.update(
+      input({ layout: "list", options, bothClosed: true, cursor: HAND }),
+      opened,
+    );
+
+    expect(frame.layout).toBe("list");
+    expect(frame.slots).toHaveLength(0);
+    expect(frame.rows).toHaveLength(KEY_VALUES.length);
+    expect(frame.centerY).toBe(HEIGHT / 2);
+  });
+
+  it("selects the row at the hand's height", () => {
+    const controller = makeController();
+    const options = KEY_VALUES;
+
+    controller.update(input({ layout: "list", options, bothClosed: true, cursor: HAND }), 0);
+    const opened = HOLD;
+    controller.update(input({ layout: "list", options, bothClosed: true, cursor: HAND }), opened);
+
+    // Rows run down the canvas, so the top row is above the middle.
+    const top = controller.update(
+      input({ layout: "list", options, bothClosed: true, cursor: cursorAtHeight(140) }),
+      opened + 10,
+    );
+    expect(top.hoveredId).toBe("key-0");
+
+    const bottom = controller.update(
+      input({ layout: "list", options, bothClosed: true, cursor: cursorAtHeight(HEIGHT - 140) }),
+      opened + 20,
+    );
+    expect(bottom.hoveredId).toBe(`key-${KEY_VALUES.length - 1}`);
+  });
+
+  it("selects nothing above or below the list", () => {
+    const controller = makeController();
+    const options = KEY_VALUES;
+
+    controller.update(input({ layout: "list", options, bothClosed: true, cursor: HAND }), 0);
+    const opened = HOLD;
+    controller.update(input({ layout: "list", options, bothClosed: true, cursor: HAND }), opened);
+
+    const frame = controller.update(
+      input({ layout: "list", options, bothClosed: true, cursor: cursorAtHeight(4) }),
+      opened + 10,
+    );
+    expect(frame.hoveredId).toBeNull();
+  });
+
+  it("commits a row after the dwell, like a ring option", () => {
+    const controller = makeController();
+    const options = KEY_VALUES;
+    const target = cursorAtHeight(140);
+
+    controller.update(input({ layout: "list", options, bothClosed: true, cursor: HAND }), 0);
+    const opened = HOLD;
+    controller.update(input({ layout: "list", options, bothClosed: true, cursor: HAND }), opened);
+
+    const steered = opened + 10;
+    controller.update(
+      input({ layout: "list", options, bothClosed: true, cursor: target }),
+      steered,
+    );
+
+    expect(
+      controller.update(
+        input({ layout: "list", options, bothClosed: true, cursor: target }),
+        steered + DWELL,
+      ).committed,
+    ).toBe("key-0");
+  });
+
+  it("stays open when a topic opens its list", () => {
+    const controller = makeController();
+    const options = [...OPTIONS, { id: "key", label: "Key", keepsMenuOpen: true }];
+    const target = pointFrom(HAND, 3, options.length);
+
+    controller.update(input({ options, bothClosed: true, cursor: HAND }), 0);
+    const opened = HOLD;
+    controller.update(input({ options, bothClosed: true, cursor: HAND }), opened);
+
+    const steered = opened + 10;
+    controller.update(input({ options, bothClosed: true, cursor: target }), steered);
+
+    const committed = controller.update(
+      input({ options, bothClosed: true, cursor: target }),
+      steered + DWELL,
+    );
+
+    expect(committed.committed).toBe("key");
+    expect(committed.isOpen).toBe(true);
   });
 });
 
