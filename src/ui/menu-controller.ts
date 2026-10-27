@@ -18,7 +18,7 @@
  */
 import { CONTROL } from "../config/constants";
 import { DwellStabilizer } from "../music/stabilizer";
-import type { CanvasPoint, RadialSlot } from "../types";
+import type { CanvasPoint, InstrumentMode, RadialSlot } from "../types";
 import { layoutRadial, slotAt, fitAnchor } from "./radial-menu";
 import type { MenuOption } from "./radial-menu";
 
@@ -59,6 +59,33 @@ export interface MenuControllerOptions {
   readonly idleTimeoutMs?: number;
   /** How far the cursor must travel before the menu responds to it, in pixels. */
   readonly moveThreshold?: number;
+}
+
+/**
+ * The menu's options for a mode: the vocabulary it is currently using, plus a
+ * switch to the other one.
+ *
+ * The vocabulary the menu offers depends on the mode, which on its own would
+ * strand the gesture maps whenever the instrument was in mono mode — they would
+ * be unreachable by gesture *and* their picker is hidden, so there would be no
+ * way back to them at all. The switch rides along so the other set is always one
+ * push away, and it keeps the menu open so the ring re-renders in place.
+ */
+export function menuOptionsFor(
+  mode: InstrumentMode,
+  vocabulary: readonly MenuOption[],
+): MenuOption[] {
+  const otherMode: InstrumentMode = mode === "mono" ? "chord" : "mono";
+
+  return [
+    ...vocabulary,
+    { id: otherMode, label: otherMode === "mono" ? "Mono" : "Chords", keepsMenuOpen: true },
+  ];
+}
+
+/** Whether a committed id is the mode switch rather than a vocabulary choice. */
+export function isModeSwitch(id: string): id is InstrumentMode {
+  return id === "chord" || id === "mono";
 }
 
 export class MenuController {
@@ -111,21 +138,24 @@ export class MenuController {
     }
 
     let justOpened = false;
+    const engaged = this.engage.update(input.bothClosed, now);
 
-    if (!this.isOpen) {
-      const engaged = this.engage.update(input.bothClosed, now);
+    if (this.armed && engaged) {
+      // The engage gesture is a toggle. Closing both hands again is how a player
+      // bails out, which they need: there is no pointer to click away with, and
+      // waiting out the idle timeout to escape a menu you did not want is not an
+      // answer.
+      this.armed = false;
+      this.engage.reset();
 
-      if (!this.armed || !engaged) {
+      if (this.isOpen) {
+        this.close();
         return this.closedUpdate(input.canvasWidth / 2, input.canvasHeight / 2);
       }
 
-      const wanted = input.cursor ?? {
-        x: input.canvasWidth / 2,
-        y: input.canvasHeight / 2,
-      };
+      const wanted = input.cursor ?? { x: input.canvasWidth / 2, y: input.canvasHeight / 2 };
 
       this.isOpen = true;
-      this.armed = false;
       this.idleSince = now;
       this.openedAt = now;
       this.dwell.reset();
@@ -133,6 +163,8 @@ export class MenuController {
       this.steerFrom = input.cursor;
       this.steering = false;
       justOpened = true;
+    } else if (!this.isOpen) {
+      return this.closedUpdate(input.canvasWidth / 2, input.canvasHeight / 2);
     }
 
     const anchor = this.anchor ?? { x: input.canvasWidth / 2, y: input.canvasHeight / 2 };
@@ -148,9 +180,26 @@ export class MenuController {
     if (hovered) this.idleSince = now;
 
     const committed = this.dwell.update(hoveredId, now);
+    let applied: string | null = null;
+    let suppressHover = false;
+
     if (committed !== null) {
-      this.close();
-      return { ...this.closedUpdate(anchor.x, anchor.y), committed };
+      const option = input.options.find((candidate) => candidate.id === committed);
+
+      if (option?.keepsMenuOpen) {
+        // The caller swaps the options under us — the mode switch changes what
+        // the menu offers — so stay open, and make the player move again before
+        // the same option can commit a second time.
+        applied = committed;
+        suppressHover = true;
+        this.dwell.reset();
+        this.steering = false;
+        this.steerFrom = input.cursor;
+        this.idleSince = now;
+      } else {
+        this.close();
+        return { ...this.closedUpdate(anchor.x, anchor.y), committed };
+      }
     }
 
     if (now - this.idleSince > this.idleTimeoutMs) {
@@ -164,10 +213,10 @@ export class MenuController {
       centerX: anchor.x,
       centerY: anchor.y,
       cursor: input.cursor,
-      hoveredId,
-      dwellProgress: hoveredId === null ? 0 : this.dwell.progress(now),
+      hoveredId: suppressHover ? null : hoveredId,
+      dwellProgress: suppressHover || hoveredId === null ? 0 : this.dwell.progress(now),
       elapsedMs: now - this.openedAt,
-      committed: null,
+      committed: applied,
       justOpened,
     };
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL } from "../config/constants";
 import type { CanvasPoint } from "../types";
-import { MenuController } from "./menu-controller";
+import { isModeSwitch, MenuController, menuOptionsFor } from "./menu-controller";
 
 const OPTIONS = [
   { id: "classic", label: "Classic" },
@@ -22,8 +22,13 @@ const CENTER: CanvasPoint = { x: WIDTH / 2, y: HEIGHT / 2 };
 const HAND: CanvasPoint = { x: 420, y: 620 };
 
 /** A cursor pointing away from `anchor` at the option at `index`. */
-function pointFrom(anchor: CanvasPoint, index: number, distance = 200): CanvasPoint {
-  const angle = -Math.PI / 2 + (index * 2 * Math.PI) / OPTIONS.length;
+function pointFrom(
+  anchor: CanvasPoint,
+  index: number,
+  count: number = OPTIONS.length,
+  distance = 200,
+): CanvasPoint {
+  const angle = -Math.PI / 2 + (index * 2 * Math.PI) / count;
   return {
     x: anchor.x + Math.cos(angle) * distance,
     y: anchor.y + Math.sin(angle) * distance,
@@ -154,6 +159,143 @@ describe("MenuController opening", () => {
       controller.update(input({ bothClosed: true, cursor: HAND }), steered + DWELL + 20 + HOLD)
         .isOpen,
     ).toBe(true);
+  });
+});
+
+describe("MenuController dismissing", () => {
+  /** Opens the menu, then releases the gesture so it can be re-armed. */
+  function openThenRelease(controller: MenuController): number {
+    const opened = openMenu(controller);
+
+    controller.update(input({ bothClosed: false }), opened + 10);
+    return opened + 10;
+  }
+
+  it("dismisses when both hands are closed again", () => {
+    const controller = makeController();
+    const released = openThenRelease(controller);
+    const closedAgainAt = released + 10;
+
+    // Still open until the hold runs out — a passing fist is not a dismissal.
+    expect(controller.update(input({ bothClosed: true }), closedAgainAt).isOpen).toBe(true);
+    expect(controller.update(input({ bothClosed: true }), closedAgainAt + HOLD - 1).isOpen).toBe(
+      true,
+    );
+
+    expect(controller.update(input({ bothClosed: true }), closedAgainAt + HOLD).isOpen).toBe(false);
+    expect(controller.open).toBe(false);
+  });
+
+  it("needs the hold again, so a passing fist does not dismiss it", () => {
+    const controller = makeController();
+    const released = openThenRelease(controller);
+    const closedAgainAt = released + 10;
+
+    controller.update(input({ bothClosed: true }), closedAgainAt);
+    expect(controller.update(input({ bothClosed: false }), closedAgainAt + 100).isOpen).toBe(true);
+    expect(controller.open).toBe(true);
+  });
+
+  it("does not dismiss on the closed hands that opened it", () => {
+    const controller = makeController();
+
+    // Never released, so the same hold that opened it cannot also close it.
+    const opened = openMenu(controller);
+    expect(controller.update(input({ bothClosed: true }), opened + HOLD * 3).isOpen).toBe(true);
+  });
+});
+
+describe("menuOptionsFor", () => {
+  const vocabulary = [
+    { id: "classic", label: "Classic" },
+    { id: "triad", label: "Triad" },
+    { id: "pentatonic", label: "Pentatonic" },
+  ];
+
+  it("keeps the current vocabulary", () => {
+    const options = menuOptionsFor("chord", vocabulary);
+
+    expect(options.slice(0, 3).map((option) => option.id)).toEqual([
+      "classic",
+      "triad",
+      "pentatonic",
+    ]);
+  });
+
+  it("offers the other mode, so the other vocabulary is reachable", () => {
+    expect(menuOptionsFor("chord", vocabulary).at(-1)).toMatchObject({
+      id: "mono",
+      keepsMenuOpen: true,
+    });
+    expect(menuOptionsFor("mono", vocabulary).at(-1)).toMatchObject({
+      id: "chord",
+      keepsMenuOpen: true,
+    });
+  });
+
+  it("recognises the mode switch ids and nothing else", () => {
+    expect(isModeSwitch("chord")).toBe(true);
+    expect(isModeSwitch("mono")).toBe(true);
+    expect(isModeSwitch("triad")).toBe(false);
+    expect(isModeSwitch("harp")).toBe(false);
+  });
+});
+
+describe("MenuController keeping the menu open", () => {
+  const SWITCHING = [...OPTIONS, { id: "mono", label: "Mono", keepsMenuOpen: true }];
+
+  it("stays open when the committed option asks it to", () => {
+    const controller = makeController();
+    const options = SWITCHING;
+    const opened = openMenu(controller);
+    const target = pointFrom(HAND, 3, SWITCHING.length);
+
+    controller.update(input({ options, bothClosed: true, cursor: target }), opened + 1);
+    const committed = controller.update(
+      input({ options, bothClosed: true, cursor: target }),
+      opened + 1 + DWELL,
+    );
+
+    expect(committed.committed).toBe("mono");
+    expect(committed.isOpen).toBe(true);
+    expect(controller.open).toBe(true);
+  });
+
+  it("requires a move again before the same option can commit twice", () => {
+    const controller = makeController();
+    const options = SWITCHING;
+    const opened = openMenu(controller);
+    const target = pointFrom(HAND, 3, SWITCHING.length);
+
+    controller.update(input({ options, bothClosed: true, cursor: target }), opened + 1);
+    const first = controller.update(
+      input({ options, bothClosed: true, cursor: target }),
+      opened + 1 + DWELL,
+    );
+    expect(first.committed).toBe("mono");
+
+    // Still resting on it: nothing highlighted, and no second commit.
+    const second = controller.update(
+      input({ options, bothClosed: true, cursor: target }),
+      opened + 1 + DWELL * 3,
+    );
+    expect(second.committed).toBeNull();
+    expect(second.hoveredId).toBeNull();
+  });
+
+  it("still closes on an ordinary choice", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+    const target = pointFrom(HAND, 1);
+
+    controller.update(input({ bothClosed: true, cursor: target }), opened + 1);
+    const committed = controller.update(
+      input({ bothClosed: true, cursor: target }),
+      opened + 1 + DWELL,
+    );
+
+    expect(committed.committed).toBe("triad");
+    expect(committed.isOpen).toBe(false);
   });
 });
 

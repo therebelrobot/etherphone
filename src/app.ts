@@ -41,7 +41,7 @@ import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
 import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
-import { MenuController } from "./ui/menu-controller";
+import { MenuController, isModeSwitch, menuOptionsFor } from "./ui/menu-controller";
 import { drawRadialMenu } from "./ui/radial-menu";
 import type { MenuOption } from "./ui/radial-menu";
 import { StartOverlay } from "./ui/start-overlay";
@@ -543,19 +543,26 @@ export class GestureSynthApp {
 
   /**
    * The options the menu offers: whichever picker currently occupies the shared
-   * slot, so the menu and the pickers can never disagree about what exists.
+   * slot, plus a switch to the other mode.
    */
   private menuOptions(): readonly MenuOption[] {
     const select = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
 
-    return Array.from(select.options).map((option) => ({
+    const vocabulary = Array.from(select.options).map((option) => ({
       id: option.value,
       label: option.textContent ?? option.value,
     }));
+
+    return menuOptionsFor(this.mode, vocabulary);
   }
 
-  /** Applies a committed menu choice to the picker it came from. */
+  /** Applies a committed menu choice to whatever it came from. */
   private applyMenuChoice(id: string): void {
+    if (isModeSwitch(id)) {
+      this.setMode(id);
+      return;
+    }
+
     if (this.mode === "mono") {
       this.setMonoStyle(id as MonoStyle);
     } else {

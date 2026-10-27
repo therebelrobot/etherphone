@@ -311,9 +311,12 @@ a mouse mid-performance — and each feature added since has added another one. 
   coarse hand does not have to land on the option. A dead zone in the middle means the
   centre is a neutral spot to retreat to.
 - **Dwell to commit.** A ring fills around the option; when it closes, the choice is
-  applied and the menu shuts. Releasing the engage gesture before holding it again is
-  required, so a player still holding their fists shut does not get a menu reopening
-  underneath them.
+  applied and the menu shuts.
+- **Close both hands again to dismiss it.** The engage gesture is a toggle, so bailing
+  out is the same movement as opening. There is no pointer to click away with, so
+  waiting out the idle timeout is not an escape; the menu says so on screen. The
+  gesture has to be released in between, so a passing fist cannot dismiss it by
+  accident.
 - **The options fan out.** Each one flies out of the anchor and settles onto its spot,
   a little after the one before it, so the menu arrives as a wave rather than all at
   once. Each is stretched along the direction it is travelling while it is in flight
@@ -322,16 +325,17 @@ a mouse mid-performance — and each feature added since has added another one. 
   into the time the player has to choose.
 - **Idling times it out** after a few seconds with the hand off every option.
 
+The menu carries the vocabulary for the current mode — the gesture maps in Chords mode,
+the mono styles in Mono mode — **plus a switch to the other mode**, because otherwise
+the two sets would be mutually unreachable by gesture. The switch keeps the menu open,
+so the ring re-renders in place and picking the other vocabulary is one continuous
+movement rather than two trips through the menu.
+
 The anchor is nudged back on screen when the hand is near an edge, so an option is never
 off-screen — where it could still be selected by direction but could not be seen.
 Because that nudge can leave the hand sitting off-centre, a deliberate move is required
 before anything is selected too; in the ordinary case the dead zone already covers it,
 and the two coincide.
-
-The menu carries whichever picker currently occupies the shared slot in the control
-stack — the gesture maps in Chords mode, the mono styles in Mono mode — because it
-reads its options from that picker rather than from a list of its own. Adding a control
-means adding it to a picker, not teaching the menu about it.
 
 Opening the menu silences the instrument: it is a deliberate pause, not an overlay you
 play through.

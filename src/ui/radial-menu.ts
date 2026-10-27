@@ -18,6 +18,14 @@ import type { CanvasPoint, RadialSlot } from "../types";
 export interface MenuOption {
   readonly id: string;
   readonly label: string;
+  /**
+   * Leaves the menu open after committing, so the caller can swap the options
+   * underneath it and the player can carry straight on.
+   *
+   * Used by the mode switch: the vocabulary the menu offers depends on the mode,
+   * so switching has to re-render the ring rather than close it.
+   */
+  readonly keepsMenuOpen?: boolean;
 }
 
 /** Everything one frame of the menu needs to draw itself. */
@@ -40,6 +48,9 @@ const DIMMED = "rgba(10, 10, 10, 0.6)";
 const OPTION_IDLE = "rgba(20, 20, 20, 0.75)";
 const OPTION_HOVER = "rgba(232, 161, 61, 0.18)";
 const EDGE = "#3a3428";
+
+/** The one thing a player cannot guess: how to leave without choosing. */
+const DISMISS_HINT = "close both hands again to dismiss";
 
 /**
  * Places options evenly around a circle, starting at the top and going clockwise.
@@ -292,6 +303,13 @@ export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: Menu
     ctx.strokeStyle = GOLD;
     ctx.stroke();
   }
+
+  // How to get out. There is no pointer to click away with, so the way to bail
+  // out has to be said rather than discovered.
+  ctx.globalAlpha = clamp01(elapsedMs / 200) * 0.75;
+  ctx.font = "13px monospace";
+  ctx.fillStyle = GOLD;
+  ctx.fillText(DISMISS_HINT, ctx.canvas.width / 2, 44);
 
   ctx.globalAlpha = 1;
   ctx.restore();
