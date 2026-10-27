@@ -10,21 +10,30 @@
  */
 import type { HandLandmarker, HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { SynthEngine } from "./audio/synth-engine";
+import { Transport } from "./audio/transport";
 import { defineUserSample, defineUserWavetable } from "./audio/user-voices";
 import { listVoices, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
 import type { VoiceDefinition, VoiceKind } from "./audio/voice";
 import { DEFAULT_VOICE_ID } from "./audio/voices";
 import {
+  BARS_STORAGE_KEY,
   GESTURE_MAP_STORAGE_KEY,
+  LOOPING_STORAGE_KEY,
   MODE_STORAGE_KEY,
   MONO_STYLE_STORAGE_KEY,
   PROJECT_NAME,
   SINGLE_HANDED_STORAGE_KEY,
+  TEMPO_STORAGE_KEY,
+  TRANSPORT,
 } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
+import { describeLooper, Looper } from "./music/looper";
+import type { LoopTrack, TrackId } from "./music/looper";
 import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
+import { resolveTakeEvent } from "./music/take";
+import type { ResolvedEvent } from "./music/take";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
 import type {
   CanvasPoint,
@@ -42,7 +51,7 @@ import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
 import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
-import { MENU_TOPICS, MenuController } from "./ui/menu-controller";
+import { menuTopicsFor, MenuController } from "./ui/menu-controller";
 import type { MenuClusterName, MenuTopic } from "./ui/menu-controller";
 import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/radial-menu";
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
@@ -61,10 +70,58 @@ import {
 } from "./vision/gestures";
 import { createHandLandmarker } from "./vision/hand-tracking";
 import { drawFrame, landmarkToCanvas } from "./vision/overlay";
+import { TransportGesture } from "./vision/transport-gesture";
+import type { TransportCommand } from "./vision/transport-gesture";
 import { drawEnergy } from "./visuals/energy";
+import { drawLoopTracks, trackSegments } from "./visuals/loop-tracks";
+import type { TrackLane } from "./visuals/loop-tracks";
+import { drawTransportCue, drawTransportFlash } from "./visuals/transport-cue";
+import type { TransportCueFrame } from "./visuals/transport-cue";
+
+/** How long a flick's confirmation stays up, in milliseconds. */
+const TRANSPORT_FLASH_MS = 380;
+
+/** The fist cue for one frame, before the canvas size is attached to it. */
+type TransportCue = Omit<TransportCueFrame, "canvasWidth" | "canvasHeight">;
 
 /** The id of the one-handed toggle, which is not a mode or a value. */
 const ONE_HANDED_ID = "one-handed";
+
+/** The id of the looper's on/off switch, which is likewise not a value. */
+const LOOPING_ID = "looping";
+
+/**
+ * The Layers menu, once a layer is in hand.
+ *
+ * The options are `"<layer id>:<action>"`, so one cluster can show what can be
+ * done to whichever layer was handed over.
+ */
+const LAYER_ACTION_MUTE = "mute";
+const LAYER_ACTION_REWRITE = "rewrite";
+const LAYER_ACTION_CLEAR = "clear";
+const LAYERS_BACK_ID = "layers-back";
+
+/** Splits a layer action id, e.g. `layer-2:rewrite`. */
+function parseLayerAction(id: string): { trackId: string; action: string } | null {
+  const [trackId, action] = id.split(":");
+
+  return trackId && action ? { trackId, action } : null;
+}
+
+/**
+ * A number remembered between visits, kept only if it is still one the picker
+ * offers — so a value the markup no longer lists cannot outlive it.
+ */
+function readStoredChoice(key: string, fallback: number, choices: readonly number[]): number {
+  try {
+    const stored = Number(window.localStorage.getItem(key));
+    if (choices.includes(stored)) return stored;
+  } catch {
+    // Storage can be unavailable; the default stands.
+  }
+
+  return fallback;
+}
 
 /** The key name carried on the selected option's `data-note` attribute. */
 function readKeyName(select: HTMLSelectElement): KeyName {
@@ -101,6 +158,21 @@ function restoreSelect(select: HTMLSelectElement, storageKey: string): string {
 export class GestureSynthApp {
   private readonly els: AppElements;
   private readonly synth: SynthEngine;
+
+  /**
+   * One channel strip per track, on the instrument's context.
+   *
+   * A layer is its own engine, so a loop and the hands — and several loops — can
+   * sound at once without fighting over one voice. Each is created the same way
+   * the live engine is, so an instrument is whatever the picker says for all of
+   * them, and each can be dropped out and brought back independently.
+   */
+  private readonly layers = new Map<TrackId, SynthEngine>();
+
+  /** The shared clock: tempo and bar lines, for the looper now and for percussion later. */
+  private readonly transport: Transport;
+  private readonly looper: Looper;
+
   private readonly stabilizer = new ChordStabilizer();
   private readonly mono = new MonoReader();
   private readonly hud: Hud;
@@ -112,6 +184,20 @@ export class GestureSynthApp {
 
   private lastVideoTime = -1;
 
+  /**
+   * The most recent inference.
+   *
+   * Kept so the frame can be redrawn every animation frame — overlays have to be
+   * repainted on a cleared canvas, and re-running detection at 60Hz to do that
+   * would be pure waste.
+   */
+  private lastResults: HandLandmarkerResult = {
+    landmarks: [],
+    worldLandmarks: [],
+    handedness: [],
+    handednesses: [],
+  };
+
   private tonicFrequency: number;
   private keyName: KeyName;
   private gestureMap: GestureMap;
@@ -121,10 +207,34 @@ export class GestureSynthApp {
   /** Whether the gesture menu owns the frame. */
   private readonly menu = new MenuController();
 
+  /**
+   * The fast transport: one fist, flicked in a direction.
+   *
+   * One reader per hand, because with both hands closed either may be the one
+   * that flicks.
+   */
+  private readonly fists: Record<Handedness, TransportGesture> = {
+    Left: new TransportGesture(),
+    Right: new TransportGesture(),
+  };
+
+  /** The cue to draw this frame, or `null`. */
+  private transportCue: TransportCue | null = null;
+
+  /** The confirmation of the last flick, until it fades. */
+  private transportFlash: { command: TransportCommand; point: CanvasPoint; at: number } | null =
+    null;
+
   constructor() {
     this.els = getAppElements();
 
     this.synth = new SynthEngine();
+
+    this.transport = new Transport({
+      bpm: readStoredChoice(TEMPO_STORAGE_KEY, TRANSPORT.defaultBpm, TRANSPORT.tempoChoices),
+      loopBars: readStoredChoice(BARS_STORAGE_KEY, TRANSPORT.defaultBars, TRANSPORT.barChoices),
+    });
+    this.looper = new Looper(this.transport);
 
     this.hud = new Hud(
       this.els.chordDisplay,
@@ -147,8 +257,11 @@ export class GestureSynthApp {
     this.mode = restoreSelect(this.els.modeSelect, MODE_STORAGE_KEY) as InstrumentMode;
     this.monoStyle = restoreSelect(this.els.monoStyleSelect, MONO_STYLE_STORAGE_KEY) as MonoStyle;
     this.singleHanded = this.readStoredSingleHanded();
+    this.looping = this.readStoredLooping();
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
+    this.renderTransportChoices();
+    this.applyLoopingVisibility();
     this.gestureMap = getGestureMap(
       restoreSelect(this.els.gestureMapSelect, GESTURE_MAP_STORAGE_KEY),
     );
@@ -166,7 +279,7 @@ export class GestureSynthApp {
     this.wireOverlays();
     this.bindControls();
     this.refreshHelp();
-    this.synth.setInstrument(this.els.instrumentSelect.value);
+    this.setInstrument(this.els.instrumentSelect.value);
 
     await startCamera(this.els.video);
     resizeCanvasToWindow(this.els.canvas);
@@ -178,7 +291,48 @@ export class GestureSynthApp {
 
   /** Constructs the components that own their own event handling. */
   private wireOverlays(): void {
-    new StartOverlay(this.els.startOverlay, this.els.canvas, () => this.synth.ensureContext());
+    new StartOverlay(this.els.startOverlay, this.els.canvas, () => this.startAudio());
+  }
+
+  /**
+   * Opens the audio graph, on a click.
+   *
+   * Every layer joins the instrument's context rather than making its own, so
+   * they share one clock — two contexts would mean two clocks, and a loop that
+   * drifts against the hand it was played with.
+   */
+  private startAudio(): void {
+    this.synth.ensureContext();
+
+    for (const layer of this.layers.values()) {
+      layer.ensureContext(this.synth.context ?? undefined);
+      layer.setInstrument(this.els.instrumentSelect.value);
+    }
+  }
+
+  /**
+   * The channel strip for a track, built on first use.
+   *
+   * Layers are made lazily so a player who never records never pays for one, and
+   * so a new track — a chord bed, a lead, and later a kit — needs no wiring of
+   * its own.
+   */
+  private layerFor(id: TrackId): SynthEngine {
+    const existing = this.layers.get(id);
+    if (existing) return existing;
+
+    const layer = new SynthEngine();
+    layer.ensureContext(this.synth.context ?? undefined);
+    layer.setInstrument(this.els.instrumentSelect.value);
+    layer.setVolume(0);
+    this.layers.set(id, layer);
+
+    return layer;
+  }
+
+  /** The instrument's clock, or zero before the audio graph exists. */
+  private audioTime(): number {
+    return this.synth.context?.currentTime ?? 0;
   }
 
   /** Wires the key, gesture-map, instrument, and instrument-loading controls. */
@@ -202,6 +356,19 @@ export class GestureSynthApp {
     this.els.instrumentSelect.addEventListener("change", () => {
       this.setInstrument(this.els.instrumentSelect.value);
     });
+
+    this.els.tempoSelect.addEventListener("change", () => {
+      this.setTempo(Number(this.els.tempoSelect.value));
+    });
+
+    this.els.barsSelect.addEventListener("change", () => {
+      this.setBars(Number(this.els.barsSelect.value));
+    });
+
+    this.els.recordButton.addEventListener("click", () => this.recordLoop());
+    this.els.playButton.addEventListener("click", () => this.playLoop());
+    this.els.stopButton.addEventListener("click", () => this.stopLoop());
+    this.els.clearButton.addEventListener("click", () => this.clearLoop());
 
     // The file inputs are hidden; the buttons are what the player sees, and
     // clicking one opens the picker for its input.
@@ -290,10 +457,117 @@ export class GestureSynthApp {
     this.refreshHelp();
   }
 
-  /** Switches instrument, by the picker's id. */
+  /**
+   * Switches instrument, by the picker's id.
+   *
+   * Both layers follow the picker: a loop is the same instrument it was played
+   * on, and a player who changes instrument expects to hear the change on the
+   * next note either way.
+   */
   private setInstrument(id: string): void {
     this.els.instrumentSelect.value = id;
     this.synth.setInstrument(id);
+
+    for (const layer of this.layers.values()) {
+      layer.setInstrument(id);
+    }
+  }
+
+  /** Changes tempo, live and without moving the loop off its place in the bar. */
+  private setTempo(bpm: number): void {
+    this.transport.setTempo(bpm, this.audioTime());
+    this.els.tempoSelect.value = String(bpm);
+    remember(TEMPO_STORAGE_KEY, String(bpm));
+  }
+
+  /**
+   * Changes the loop's length.
+   *
+   * A take recorded against one grid does not fit another, so playback stops
+   * rather than continuing a loop of the wrong length. The take is kept.
+   */
+  private setBars(bars: number): void {
+    this.transport.setLoopBars(bars);
+    this.els.barsSelect.value = String(bars);
+    remember(BARS_STORAGE_KEY, String(bars));
+
+    if (this.looper.hasTake) this.stopLoop();
+  }
+
+  /**
+   * Arms a recording of a **new layer** in the current mode.
+   *
+   * Recording adds rather than replaces, so a part can be built up — chords,
+   * then another chord part, then a melody — and a misflick never destroys
+   * anything. Redoing one layer is {@link rewriteLoop}, which has to be asked
+   * for by name.
+   */
+  private recordLoop(): void {
+    this.looper.record(this.audioTime(), this.mode);
+  }
+
+  /** Arms a re-recording of one layer, replacing what it holds. */
+  private rewriteLoop(id: TrackId): void {
+    this.looper.rewrite(this.audioTime(), id);
+  }
+
+  /** Throws one layer away, retiring its channel with it. */
+  private clearLayer(id: TrackId): void {
+    this.looper.clearTrack(id);
+    this.layers.get(id)?.stop();
+    this.layers.delete(id);
+
+    if (this.layerFocus === id) this.layerFocus = null;
+  }
+
+  /** Starts every stored layer from the loop's beginning. */
+  private playLoop(): void {
+    this.looper.play(this.audioTime());
+  }
+
+  /** Stops the loop, keeping every layer. */
+  private stopLoop(): void {
+    this.looper.stop();
+
+    for (const layer of this.layers.values()) layer.stop();
+  }
+
+  /** Throws every layer away. */
+  private clearLoop(): void {
+    this.looper.clear();
+
+    for (const layer of this.layers.values()) layer.stop();
+  }
+
+  /**
+   * Silences or restores a layer.
+   *
+   * Muting has to silence the layer *now*, not just stop scheduling it: a
+   * two-bar chord would otherwise keep ringing after the track was dropped out.
+   * Unmuting is the mirror image — the track picks up the note it is already in
+   * the middle of, so it comes back in as though it had never left.
+   */
+  private toggleLayer(id: TrackId): void {
+    this.looper.toggleMute(id);
+
+    const track = this.looper.tracks.find((candidate) => candidate.id === id);
+    const layer = this.layers.get(id);
+    if (!track || !layer) return;
+
+    if (track.muted) {
+      layer.stop();
+      return;
+    }
+
+    this.replayLayer(track);
+  }
+
+  /** Re-primes a layer with whatever it should be sounding right now. */
+  private replayLayer(track: LoopTrack): void {
+    const event = this.looper.currentEvent(track.id, this.audioTime());
+    if (!event) return;
+
+    this.playLoopEvent(track.id, resolveTakeEvent(event, this.tonicFrequency));
   }
 
   /** Reads the remembered one-handed setting. */
@@ -309,6 +583,58 @@ export class GestureSynthApp {
   private setSingleHanded(enabled: boolean): void {
     this.singleHanded = enabled;
     remember(SINGLE_HANDED_STORAGE_KEY, enabled ? "on" : "off");
+  }
+
+  /** Reads the remembered looping setting. On unless it was turned off. */
+  private readStoredLooping(): boolean {
+    try {
+      return window.localStorage.getItem(LOOPING_STORAGE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Turns the looper on or off, and remembers it.
+   *
+   * Off means off: the transport, the layers and the fist gestures all go, and
+   * anything recorded goes with them rather than sitting there hidden. The
+   * instrument a player is left with is the one that existed before the looper —
+   * which is a perfectly good instrument, and the one most people want.
+   */
+  private setLooping(enabled: boolean): void {
+    if (enabled === this.looping) return;
+
+    this.looping = enabled;
+    remember(LOOPING_STORAGE_KEY, enabled ? "on" : "off");
+    this.applyLoopingVisibility();
+
+    if (!enabled) {
+      this.clearLoop();
+      this.transportCue = null;
+      this.forgetFists();
+    }
+
+    this.refreshHelp();
+  }
+
+  /** Shows the looper's controls only when the looper is on. */
+  private applyLoopingVisibility(): void {
+    const controls = [
+      this.els.tempoSelect,
+      this.els.barsSelect,
+      this.els.transportControls,
+      this.els.transportDisplay,
+      this.els.layerControls,
+    ];
+
+    for (const control of controls) control.classList.toggle("hidden", !this.looping);
+  }
+
+  /** Drops whatever the fist readers were holding, e.g. when looping is turned off. */
+  private forgetFists(): void {
+    this.fists.Left.reset();
+    this.fists.Right.reset();
   }
 
   /** Switches the gesture vocabulary and keeps the readouts in step. */
@@ -333,6 +659,12 @@ export class GestureSynthApp {
     this.synth.stop();
     this.stabilizer.reset();
     this.mono.reset();
+
+    // A take in progress would be half chord and half melody, so it is dropped.
+    // The layers already recorded keep playing; that is how you record the
+    // melody *over* the chord bed.
+    this.looper.cancelRecording();
+
     this.refreshHelp();
   }
 
@@ -352,7 +684,7 @@ export class GestureSynthApp {
   /** Re-renders the two places that describe what the hands do. */
   private refreshHelp(): void {
     this.guide.render(this.mode, this.keyName, this.gestureMap);
-    this.help.render(this.mode, this.keyName, this.gestureMap);
+    this.help.render(this.mode, this.keyName, this.gestureMap, this.looping);
   }
 
   /**
@@ -397,6 +729,40 @@ export class GestureSynthApp {
   }
 
   /**
+   * Fills the tempo and loop-length pickers from the configured choices.
+   *
+   * Like the other pickers, this reads a list rather than hardcoding options, so
+   * a tempo or a loop length is added by declaring it once.
+   */
+  private renderTransportChoices(): void {
+    const fill = (
+      select: HTMLSelectElement,
+      values: readonly number[],
+      label: (value: number) => string,
+      selected: number,
+    ): void => {
+      select.replaceChildren(
+        ...values.map((value) => {
+          const option = document.createElement("option");
+          option.value = String(value);
+          option.textContent = label(value);
+          return option;
+        }),
+      );
+
+      select.value = String(selected);
+    };
+
+    fill(this.els.tempoSelect, TRANSPORT.tempoChoices, (bpm) => `${bpm} BPM`, this.transport.tempo);
+    fill(
+      this.els.barsSelect,
+      TRANSPORT.barChoices,
+      (bars) => `${bars} bar${bars === 1 ? "" : "s"}`,
+      this.transport.loopBars,
+    );
+  }
+
+  /**
    * Runs one gesture pass per animation frame.
    *
    * Inference is skipped when the video has not advanced, but the frame is still
@@ -406,21 +772,27 @@ export class GestureSynthApp {
     const tick = (): void => {
       const now = performance.now();
 
+      // Inference only when the video has actually advanced, but the frame is
+      // drawn **every** frame: drawing only on new video leaves the overlays to
+      // pile up on top of one another between clears, which smears everything
+      // that moves — the menu, the ribbon, and the fist cue alike.
       if (this.els.video.currentTime !== this.lastVideoTime) {
         this.lastVideoTime = this.els.video.currentTime;
-
-        const results = handLandmarker.detectForVideo(this.els.video, now);
-        drawFrame(
-          this.els.ctx,
-          this.els.video,
-          results,
-          this.els.canvas.width,
-          this.els.canvas.height,
-        );
-        this.captureHands(results);
+        this.lastResults = handLandmarker.detectForVideo(this.els.video, now);
+        this.captureHands(this.lastResults);
       }
 
+      drawFrame(
+        this.els.ctx,
+        this.els.video,
+        this.lastResults,
+        this.els.canvas.width,
+        this.els.canvas.height,
+      );
+
       this.updateFrame(now);
+      // The cue is drawn last so it sits over the ribbon and the loop's lanes.
+      this.renderTransportCue(now);
       requestAnimationFrame(tick);
     };
 
@@ -448,10 +820,22 @@ export class GestureSynthApp {
   /** Maps one frame of gestures onto sound, readouts, and animation. */
   private updateFrame(now: number): void {
     const { Left, Right } = this.hands;
+    const ctxTime = this.audioTime();
+
+    // The loop runs under everything, including the menu: changing a setting
+    // mid-performance should not stop the music it is playing over.
+    this.updateLoop(ctxTime);
+
+    // The fist is read *before* the menu, so a flick can beat an engage that is
+    // still counting down — and cancel it, because a flick is deliberate.
+    this.updateTransportGesture(now, Left, Right);
 
     // The menu takes the whole frame when it is up: opening it is a deliberate
-    // pause, so nothing plays underneath it.
-    if (this.updateControlMenu(now, Left, Right)) return;
+    // pause, so nothing *played* sounds underneath it.
+    if (this.updateControlMenu(now, Left, Right)) {
+      this.transportCue = null;
+      return;
+    }
 
     // Expression follows the right hand in both modes: it is the "how it
     // sounds" hand, whether the left hand is playing chords or a melody.
@@ -467,7 +851,7 @@ export class GestureSynthApp {
     }
 
     if (this.mode === "mono") {
-      this.updateMonoFrame(Left, volume, tilt);
+      this.updateMonoFrame(Left, volume, tilt, ctxTime);
       return;
     }
 
@@ -481,6 +865,21 @@ export class GestureSynthApp {
     this.hud.setChord(getChordDisplayName(chord, isMajorMode, this.keyName), chord);
     this.hud.setQuality(getVoicingLabel(isMajorMode, qualityIndex), thumbDown);
 
+    this.looper.capture(
+      state && state.qualityIndex >= 1
+        ? {
+            kind: "chord",
+            numeral: state.chord,
+            isMajorMode: state.isMajorMode,
+            qualityIndex: state.qualityIndex,
+            thumbDown: state.thumbDown,
+          }
+        : null,
+      volume,
+      tilt,
+      ctxTime,
+    );
+
     if (Right) {
       this.updateVoices(state, volume);
     }
@@ -489,16 +888,124 @@ export class GestureSynthApp {
   }
 
   /**
+   * Advances the loop and replays whatever came due this frame.
+   *
+   * The events drive the loop layer exactly as the hands drive the live one:
+   * the same frequencies, from the same harmony functions, into a voice of the
+   * same kind. That is what makes a take sound like the take.
+   */
+  private updateLoop(ctxTime: number): void {
+    for (const hit of this.looper.tick(ctxTime)) {
+      this.playLoopEvent(hit.trackId, resolveTakeEvent(hit.event, this.tonicFrequency));
+    }
+
+    const { state } = this.looper;
+
+    this.els.transportDisplay.textContent = describeLooper({
+      state,
+      loopBars: this.transport.loopBars,
+      hasTake: this.looper.hasTake,
+      recordingLabel: this.looper.recordingLabel,
+      countdownBeats: this.looper.countdownBeats(ctxTime),
+    });
+
+    this.els.recordButton.classList.toggle("active", state === "recording" || state === "armed");
+
+    this.renderLayerControls();
+    drawLoopTracks(this.els.ctx, {
+      lanes: this.layerLanes(ctxTime),
+      positionBeats: this.looper.positionBeats(ctxTime),
+      loopBeats: this.transport.loopBeats,
+      isPlaying: this.transport.isPlaying,
+      canvasWidth: this.els.canvas.width,
+      canvasHeight: this.els.canvas.height,
+    });
+  }
+
+  /** The tracks, as the loop view needs them. */
+  private layerLanes(ctxTime: number): TrackLane[] {
+    return this.looper.tracks.map((track) => {
+      const isRecording = this.looper.recordingId === track.id;
+
+      return {
+        label: track.label,
+        mode: track.mode,
+        // A lane being recorded is drawn only as far as the playhead, so its
+        // notes arrive as they are played rather than all at once at the end.
+        segments: trackSegments(
+          this.looper.eventsFor(track.id),
+          this.transport.loopBeats,
+          isRecording ? this.looper.positionBeats(ctxTime) : this.transport.loopBeats,
+        ),
+        isRecording,
+        isEmpty: track.take === null,
+        muted: track.muted,
+      };
+    });
+  }
+
+  private playLoopEvent(trackId: TrackId, resolved: ResolvedEvent): void {
+    const layer = this.layerFor(trackId);
+
+    if (resolved.notes.length === 0) {
+      layer.setVolume(0);
+      return;
+    }
+
+    layer.playNotes(resolved.notes);
+    layer.updateFilterSweep(resolved.tilt);
+    layer.setVolume(resolved.volume);
+  }
+
+  /**
+   * Rebuilds the per-layer mute buttons, but only when the layers have changed.
+   *
+   * Called from the render loop, so it has to be cheap: the signature check is
+   * what keeps it from rebuilding six buttons sixty times a second.
+   */
+  private renderLayerControls(): void {
+    const tracks = this.looper.tracks;
+    const signature = tracks.map((track) => `${track.id}:${track.muted}`).join(",");
+    if (signature === this.layerSignature) return;
+
+    this.layerSignature = signature;
+
+    this.els.layerControls.replaceChildren(
+      ...tracks.map((track) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = track.label;
+        button.classList.toggle("muted", track.muted);
+        button.title = track.muted ? `Bring ${track.label} back in` : `Drop ${track.label} out`;
+        button.addEventListener("click", () => this.toggleLayer(track.id));
+        return button;
+      }),
+    );
+  }
+
+  /** The last signature the layer buttons were built from, to avoid rebuilding. */
+  private layerSignature = "";
+
+  /**
    * The mono voice: pitch from the left hand's height, expression from the right.
    *
    * There is no chord to stabilise here — the note is simply wherever the hand
    * is — so this reads the frame directly rather than through the stabiliser.
    */
-  private updateMonoFrame(left: Hand | null, volume: number, tilt: number): void {
+  private updateMonoFrame(left: Hand | null, volume: number, tilt: number, ctxTime: number): void {
     const reading = this.mono.update(
       left ? getHandHeight(left) : null,
       this.monoStyle,
       this.tonicFrequency,
+    );
+
+    // A recorded melody is its degrees, not its frequencies, so it transposes
+    // with the key like the chord loop does.
+    this.looper.capture(
+      reading ? { kind: "note", degree: reading.degree } : null,
+      volume,
+      tilt,
+      ctxTime,
     );
 
     if (!reading) {
@@ -533,6 +1040,122 @@ export class GestureSynthApp {
   }
 
   /**
+   * The fast transport: one fist, flicked in a direction.
+   *
+   * Each hand is read separately, because with both hands closed either one may
+   * be the one that flicks — and a flick is *deliberate*, so it is allowed to
+   * beat a menu engage that is still counting down. That is the split: a closed
+   * hand that **moves** is a transport, a closed pair that **holds** is the menu.
+   *
+   * The cue is stashed rather than drawn, so it can be put on top of everything
+   * else once the frame is complete.
+   */
+  private updateTransportGesture(now: number, left: Hand | null, right: Hand | null): void {
+    const hands: readonly (readonly [Handedness, Hand | null])[] = [
+      ["Left", left],
+      ["Right", right],
+    ];
+
+    // With the looper off there is no transport to flick; while the menu owns
+    // the frame there is no room for one either. Either way the fist stands
+    // aside rather than offering commands that would do nothing.
+    if (!this.looping || this.menu.open) {
+      this.forgetFists();
+      this.transportCue = null;
+      return;
+    }
+
+    const closed = hands.filter(([, hand]) => hand !== null && isHandClosed(hand));
+    const bothClosed = closed.length === 2;
+
+    let cue: TransportCue | null = null;
+    let fired: TransportCommand | null = null;
+    let firedAt: CanvasPoint | null = null;
+
+    for (const [handedness, hand] of hands) {
+      const reading = this.fists[handedness].update(hand, now);
+
+      if (reading.command !== null && hand) {
+        fired = reading.command;
+        firedAt = this.placePoint(getHandCenter(hand));
+      }
+
+      // With both hands closed the fist is sharing the hold with the menu, so
+      // its cue waits until a flick is actually under way — otherwise a hand
+      // held for the menu would be told it could flick.
+      const showCue = reading.ready && (!bothClosed || reading.progress > 0);
+      const point = showCue && hand ? this.placePoint(getHandCenter(hand)) : null;
+      const anchor = reading.anchor ? this.placePoint(reading.anchor) : null;
+      if (!point || !anchor) continue;
+
+      cue = {
+        point,
+        anchor,
+        trail: reading.trail.flatMap((step) => this.placePoint(step) ?? []),
+        direction: reading.direction,
+        progress: reading.progress,
+        readyForMs: reading.readyForMs,
+      };
+    }
+
+    this.transportCue = cue;
+
+    if (fired !== null) {
+      // A flick is deliberate, so it takes the hand back from a menu that was
+      // still counting down, and confirms itself where the hand is.
+      this.menu.cancelEngage();
+      this.transportFlash = firedAt ? { command: fired, point: firedAt, at: now } : null;
+      this.runTransportCommand(fired);
+    }
+  }
+
+  /** Draws the fist cue and its confirmation, if either is live. */
+  private renderTransportCue(now: number): void {
+    const cue = this.transportCue;
+    if (cue) {
+      drawTransportCue(this.els.ctx, {
+        ...cue,
+        canvasWidth: this.els.canvas.width,
+        canvasHeight: this.els.canvas.height,
+      });
+    }
+
+    const flash = this.transportFlash;
+    if (!flash) return;
+
+    const ageMs = now - flash.at;
+    if (ageMs > TRANSPORT_FLASH_MS) {
+      this.transportFlash = null;
+      return;
+    }
+
+    drawTransportFlash(this.els.ctx, {
+      command: flash.command,
+      point: flash.point,
+      ageMs,
+      durationMs: TRANSPORT_FLASH_MS,
+    });
+  }
+
+  /** Sends a flicked command to the looper. */
+  private runTransportCommand(command: TransportCommand): void {
+    switch (command) {
+      case "record":
+        this.recordLoop();
+        return;
+      case "play":
+        this.playLoop();
+        return;
+      case "stop":
+        this.stopLoop();
+        return;
+      case "clear":
+        this.clearLoop();
+        return;
+    }
+  }
+
+  /**
    * Runs the gesture menu, opening it when the engage gesture is held.
    *
    * @returns True when the menu owns the frame, which is what keeps the
@@ -553,7 +1176,7 @@ export class GestureSynthApp {
 
     const update = this.menu.update(
       {
-        menus: { layout: "radial", items: MENU_TOPICS, activeId: this.menuId },
+        menus: { layout: "radial", items: menuTopicsFor(this.looping), activeId: this.menuId },
         options: this.optionsCluster(),
         bothClosed,
         menuCursor: solo ?? (left ? this.cursorFor(left) : null),
@@ -579,6 +1202,7 @@ export class GestureSynthApp {
     if (!update.isOpen) {
       // The next open starts on the vocabulary again, not wherever this one was.
       this.menuId = "vocabulary";
+      this.layerFocus = null;
       return false;
     }
 
@@ -586,7 +1210,7 @@ export class GestureSynthApp {
     drawCluster(this.els.ctx, update.menus, MENUS_STYLE);
     drawCluster(this.els.ctx, update.options, OPTIONS_STYLE);
 
-    this.hud.setNote(this.menuLabel(update.menus));
+    this.hud.setNote(this.menuTitle(update.menus));
     this.hud.setQuality(
       update.options.hoveredId === null ? "Control" : this.labelFor(update.options),
       false,
@@ -598,6 +1222,22 @@ export class GestureSynthApp {
   /** The label under the readout: the menu in play, and the option hovered. */
   private menuLabel(frame: { items: readonly MenuOption[]; activeId: string | null }): string {
     return frame.items.find((item) => item.id === frame.activeId)?.label ?? "MENU";
+  }
+
+  /**
+   * What the readout calls the menu — the layer's name while one is in hand.
+   *
+   * Drilling into a layer changes what the options mean without changing which
+   * menu is in play, so the readout is the only place that can say *which* layer
+   * Rewrite and Clear would act on.
+   */
+  private menuTitle(frame: { items: readonly MenuOption[]; activeId: string | null }): string {
+    if (this.menuId === "layers" && this.layerFocus) {
+      const track = this.looper.tracks.find((candidate) => candidate.id === this.layerFocus);
+      if (track) return track.label;
+    }
+
+    return this.menuLabel(frame);
   }
 
   /** The values the current menu holds. */
@@ -628,6 +1268,59 @@ export class GestureSynthApp {
       };
     }
 
+    if (this.menuId === "layers") {
+      const tracks = this.looper.tracks;
+      if (tracks.length === 0) {
+        return { layout: "radial", items: [{ id: "none", label: "No layers yet" }] };
+      }
+
+      // With a layer in hand, the menu shows what can be done to *it*. Those are
+      // the destructive options — redo it, throw it away — so a second step to
+      // reach them is the point, not an accident.
+      const focused = tracks.find((track) => track.id === this.layerFocus);
+      if (focused) {
+        return {
+          layout: "radial",
+          items: [
+            {
+              id: `${focused.id}:${LAYER_ACTION_MUTE}`,
+              label: focused.muted ? "Unmute" : "Mute",
+              keepsMenuOpen: true,
+            },
+            { id: `${focused.id}:${LAYER_ACTION_REWRITE}`, label: "Rewrite" },
+            { id: `${focused.id}:${LAYER_ACTION_CLEAR}`, label: "Clear" },
+            { id: LAYERS_BACK_ID, label: "Back", keepsMenuOpen: true },
+          ],
+        };
+      }
+
+      // One entry per layer; choosing one hands it over to be worked on. The
+      // menu stays open, so a player can drop two parts out in one visit.
+      return {
+        layout: "radial",
+        items: tracks.map((track) => ({
+          id: track.id,
+          label: `${track.label}${track.muted ? " · off" : ""}`,
+          keepsMenuOpen: true,
+        })),
+      };
+    }
+
+    if (this.menuId === "transport") {
+      // The looper's controls, reachable without dropping a hand to the mouse —
+      // which is the whole point of running the transport through the menu.
+      return {
+        layout: "radial",
+        items: [
+          { id: "record", label: "Record" },
+          { id: "play", label: "Play" },
+          { id: "stop", label: "Stop" },
+          { id: "clear", label: "Clear" },
+        ],
+        activeId: this.looper.state,
+      };
+    }
+
     if (this.menuId === "settings") {
       const oneHanded: MenuOption = {
         id: ONE_HANDED_ID,
@@ -637,12 +1330,21 @@ export class GestureSynthApp {
         keepsMenuOpen: true,
       };
 
+      const looping: MenuOption = {
+        id: LOOPING_ID,
+        label: this.looping ? "Looping: on" : "Looping: off",
+        // Left open so the label flips where the player is looking, which is
+        // the only confirmation a toggle like this gets.
+        keepsMenuOpen: true,
+      };
+
       return {
         layout: "radial",
         items: [
           { id: "chord", label: "Chords", keepsMenuOpen: true },
           { id: "mono", label: "Mono", keepsMenuOpen: true },
           oneHanded,
+          looping,
         ],
         activeId: this.mode,
       };
@@ -668,10 +1370,16 @@ export class GestureSynthApp {
       // A menu choice changes what the other cluster holds, so the menu stays
       // open and the right hand picks up from the new list.
       this.menuId = choice.id as MenuTopic;
+      this.layerFocus = null;
       return;
     }
 
     if (this.menuId === "settings") {
+      if (choice.id === LOOPING_ID) {
+        this.setLooping(!this.looping);
+        return;
+      }
+
       if (choice.id === ONE_HANDED_ID) {
         this.setSingleHanded(!this.singleHanded);
         return;
@@ -692,6 +1400,53 @@ export class GestureSynthApp {
       return;
     }
 
+    if (this.menuId === "layers") {
+      if (choice.id === LAYERS_BACK_ID) {
+        this.layerFocus = null;
+        return;
+      }
+
+      const action = parseLayerAction(choice.id);
+
+      // No action means a layer was chosen: hand it over for the next step.
+      if (!action) {
+        if (this.looper.tracks.some((track) => track.id === choice.id)) this.layerFocus = choice.id;
+        return;
+      }
+
+      switch (action.action) {
+        case LAYER_ACTION_MUTE:
+          this.toggleLayer(action.trackId);
+          return;
+        case LAYER_ACTION_REWRITE:
+          this.layerFocus = null;
+          this.rewriteLoop(action.trackId);
+          return;
+        case LAYER_ACTION_CLEAR:
+          this.clearLayer(action.trackId);
+          return;
+      }
+      return;
+    }
+
+    if (this.menuId === "transport") {
+      switch (choice.id) {
+        case "record":
+          this.recordLoop();
+          return;
+        case "play":
+          this.playLoop();
+          return;
+        case "stop":
+          this.stopLoop();
+          return;
+        case "clear":
+          this.clearLoop();
+          return;
+      }
+      return;
+    }
+
     if (this.mode === "mono") {
       this.setMonoStyle(choice.id as MonoStyle);
     } else {
@@ -701,23 +1456,42 @@ export class GestureSynthApp {
 
   /** Which menu the left hand has chosen, and the right hand is choosing within. */
   private menuId: MenuTopic = "vocabulary";
+  /** Which layer the Layers menu is working on, once one has been handed over. */
+  private layerFocus: TrackId | null = null;
   /** Whether one hand drives the whole menu, a stage at a time. */
   private singleHanded = false;
+  /**
+   * Whether the looper is available at all.
+   *
+   * Off means the instrument simply plays: no transport, no layers, no fist
+   * gestures. It is a setting rather than a hidden panel because a feature you
+   * do not use should not be a feature you have to work around.
+   */
+  private looping = true;
 
   /**
-   * The right hand's palm centre, in canvas coordinates, for the menu cursor.
+   * A normalised frame point, in canvas coordinates.
+   *
+   * Everything that has to line up with the drawn hand comes through here,
+   * because `drawFrame` draws inside a mirrored transform — see
+   * {@link landmarkToCanvas}.
    */
-  private cursorFor(hand: Hand): CanvasPoint | null {
+  private placePoint(point: { readonly x: number; readonly y: number }): CanvasPoint | null {
     const { videoWidth, videoHeight } = this.els.video;
     if (!videoWidth || !videoHeight) return null;
 
     return landmarkToCanvas(
-      getHandCenter(hand),
+      point,
       videoWidth,
       videoHeight,
       this.els.canvas.width,
       this.els.canvas.height,
     );
+  }
+
+  /** A hand's palm centre, in canvas coordinates, for the menu cursor. */
+  private cursorFor(hand: Hand): CanvasPoint | null {
+    return this.placePoint(getHandCenter(hand));
   }
 
   /** Sends the current intent to the synth, or silences it. */

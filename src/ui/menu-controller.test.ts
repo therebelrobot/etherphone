@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL } from "../config/constants";
 import type { CanvasPoint } from "../types";
-import { isMenuTopic, isModeSwitch, MENU_TOPICS, MenuController } from "./menu-controller";
+import {
+  isMenuTopic,
+  isModeSwitch,
+  MENU_TOPICS,
+  MenuController,
+  menuTopicsFor,
+} from "./menu-controller";
 
 const VOCABULARY = [
   { id: "classic", label: "Classic" },
@@ -98,6 +104,18 @@ describe("MenuController opening", () => {
     expect(controller.update(input({ bothClosed: true }), 0).isOpen).toBe(false);
     expect(controller.update(input({ bothClosed: true }), HOLD - 1).isOpen).toBe(false);
     expect(controller.update(input({ bothClosed: true }), HOLD).isOpen).toBe(true);
+  });
+
+  it("lets a flick cancel a hold that has not opened the menu yet", () => {
+    const controller = makeController();
+
+    controller.update(input({ bothClosed: true }), 0);
+    controller.update(input({ bothClosed: true }), HOLD - 100);
+    controller.cancelEngage();
+
+    // The hold starts again from the cancellation, so it needs the full time.
+    expect(controller.update(input({ bothClosed: true }), HOLD).isOpen).toBe(false);
+    expect(controller.update(input({ bothClosed: true }), HOLD * 2).isOpen).toBe(true);
   });
 
   it("reports the frame it opened on, so the caller can go quiet", () => {
@@ -461,6 +479,8 @@ describe("menu topic and mode ids", () => {
     expect(isMenuTopic("vocabulary")).toBe(true);
     expect(isMenuTopic("key")).toBe(true);
     expect(isMenuTopic("instrument")).toBe(true);
+    expect(isMenuTopic("layers")).toBe(true);
+    expect(isMenuTopic("transport")).toBe(true);
     expect(isMenuTopic("settings")).toBe(true);
     expect(isMenuTopic("classic")).toBe(false);
     expect(isMenuTopic("chord")).toBe(false);
@@ -472,11 +492,23 @@ describe("menu topic and mode ids", () => {
     expect(isModeSwitch("triad")).toBe(false);
   });
 
-  it("offers four menus", () => {
+  it("drops the looper's own menus when looping is turned off", () => {
+    expect(menuTopicsFor(true)).toBe(MENU_TOPICS);
+    expect(menuTopicsFor(false).map((topic) => topic.id)).toEqual([
+      "vocabulary",
+      "key",
+      "instrument",
+      "settings",
+    ]);
+  });
+
+  it("offers the vocabulary, key, instrument, layers, transport, and settings menus", () => {
     expect(MENU_TOPICS.map((topic) => topic.id)).toEqual([
       "vocabulary",
       "key",
       "instrument",
+      "layers",
+      "transport",
       "settings",
     ]);
   });

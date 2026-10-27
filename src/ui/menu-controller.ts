@@ -82,15 +82,33 @@ export interface MenuControllerOptions {
 }
 
 /** A menu whose values are too many for a ring, so it opens as a list. */
-export type MenuTopic = "vocabulary" | "key" | "instrument" | "settings";
+export type MenuTopic = "vocabulary" | "key" | "instrument" | "layers" | "transport" | "settings";
 
 /** The menus the left hand chooses between. */
 export const MENU_TOPICS: readonly MenuOption[] = [
   { id: "vocabulary", label: "Vocabulary" },
   { id: "key", label: "Key" },
   { id: "instrument", label: "Instrument" },
+  { id: "layers", label: "Layers" },
+  { id: "transport", label: "Transport" },
   { id: "settings", label: "Settings" },
 ];
+
+/** The menus that only mean something while the looper is on. */
+const LOOPER_TOPICS = new Set<string>(["transport", "layers"]);
+
+/**
+ * The menus in play.
+ *
+ * With looping turned off the transport and the layers are not merely empty —
+ * they are absent, because a menu of controls that do nothing is worse than no
+ * menu at all.
+ */
+export function menuTopicsFor(looping: boolean): readonly MenuOption[] {
+  if (looping) return MENU_TOPICS;
+
+  return MENU_TOPICS.filter((topic) => !LOOPER_TOPICS.has(topic.id));
+}
 
 /** Whether a committed id selects a menu rather than a value. */
 export function isMenuTopic(id: string): id is MenuTopic {
@@ -421,6 +439,18 @@ export class MenuController {
       justOpened,
       elapsedMs,
     };
+  }
+
+  /**
+   * Abandons an engage that has not opened the menu yet.
+   *
+   * The closed hands that would open the menu are the same closed hands the
+   * transport's fist is made from, so a flick needs a way to say "not you" while
+   * the hold is still counting down. It stays armed, so holding again opens the
+   * menu as usual.
+   */
+  cancelEngage(): void {
+    this.engage.reset();
   }
 
   /** Closes the menu, e.g. when the mode changes underneath it. */

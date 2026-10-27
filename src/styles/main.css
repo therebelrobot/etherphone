@@ -75,8 +75,11 @@ body {
 
 /* ---- Controls ---- */
 
+/* The one utility that must always win. A control that lays itself out — the
+   flex rows, for instance — would otherwise keep its own `display` and stay on
+   screen while claiming to be hidden. */
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 #modeSelect,
@@ -84,6 +87,8 @@ body {
 #gestureMapSelect,
 #monoStyleSelect,
 #instrumentSelect,
+#tempoSelect,
+#barsSelect,
 .load-button,
 #guideToggle {
   position: absolute;
@@ -132,6 +137,83 @@ body {
 #guideToggle {
   top: 228px;
   cursor: pointer;
+}
+
+/* ---- Looper transport ---- */
+
+#tempoSelect {
+  top: 264px;
+}
+
+#barsSelect {
+  top: 300px;
+}
+
+#transportControls {
+  position: absolute;
+  left: 12px;
+  top: 336px;
+  display: flex;
+  gap: 6px;
+  z-index: 5;
+}
+
+#transportControls button {
+  background: #1a1a1a;
+  color: #e8a13d;
+  border: 1px solid #3a3428;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+/* Armed or recording: the one state a player must not miss. */
+#transportControls button.active {
+  background: #4a1a1a;
+  border-color: #e8543d;
+  color: #ffb3a0;
+}
+
+#transportDisplay {
+  position: absolute;
+  left: 12px;
+  top: 372px;
+  color: #e8a13d;
+  font-family: monospace;
+  font-size: 14px;
+  z-index: 5;
+}
+
+/* One toggle per recorded layer: the fastest way to drop a part out by mouse. */
+#layerControls {
+  position: absolute;
+  left: 12px;
+  top: 400px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 260px;
+  z-index: 5;
+}
+
+#layerControls button {
+  background: #1a1a1a;
+  color: #e8a13d;
+  border: 1px solid #e8a13d;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+/* A dropped-out layer reads as struck out, matching the loop view. */
+#layerControls button.muted {
+  color: #6a5a3a;
+  border-color: #3a3428;
+  text-decoration: line-through;
 }
 
 #helpButton {

@@ -122,6 +122,66 @@ export interface ChordTones {
   readonly dim5Tone: number;
 }
 
+/**
+ * What the looper is doing.
+ *
+ * `armed` is the count-in: the recording has not begun, it is waiting for the
+ * next bar line so the loop starts in time rather than wherever a hand happened
+ * to be.
+ */
+export type LooperState = "idle" | "armed" | "recording" | "playing";
+
+/** One captured moment of a performance, positioned in the loop. */
+export type TakeEvent = ChordTakeEvent | NoteTakeEvent | RestTakeEvent;
+
+interface TakeEventBase {
+  /** Where in the loop the event lands, in beats from the loop's start. */
+  readonly beat: number;
+  /** Master volume when it was played, 0..1. */
+  readonly volume: number;
+  /** Filter tilt when it was played, -1..1. */
+  readonly tilt: number;
+}
+
+/** A chord the left hand was holding. */
+export interface ChordTakeEvent extends TakeEventBase {
+  readonly kind: "chord";
+  readonly numeral: ChordNumeral;
+  readonly isMajorMode: boolean;
+  readonly qualityIndex: number;
+  readonly thumbDown: boolean;
+}
+
+/** A single note, from the mono voice. */
+export interface NoteTakeEvent extends TakeEventBase {
+  readonly kind: "note";
+  /** Scale degree, counted past the seventh. */
+  readonly degree: number;
+}
+
+/** Silence: the hands were not playing. */
+export interface RestTakeEvent extends TakeEventBase {
+  readonly kind: "rest";
+}
+
+/**
+ * A recorded performance.
+ *
+ * A take stores musical *intent* — the chord that was held, or the degree the
+ * mono voice reached — not frequencies, and not audio. That keeps it a handful
+ * of numbers that can be re-resolved against whatever key is selected, so
+ * changing the key transposes the loop. It is also the position the umbrella
+ * RFC takes: record what was meant, replay it through the same pipeline, and a
+ * take sounds exactly like the take.
+ */
+export interface Take {
+  /** Tempo the take was recorded at. */
+  readonly bpm: number;
+  /** Loop length, in beats. */
+  readonly loopBeats: number;
+  readonly events: readonly TakeEvent[];
+}
+
 /** A source rectangle that crops a video to match a destination aspect ratio. */
 export interface CoverRect {
   readonly sx: number;

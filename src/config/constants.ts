@@ -137,6 +137,84 @@ export const CONTROL = {
   optionRadius: 54,
 } as const;
 
+/**
+ * The looper's clock and grid.
+ *
+ * The transport is the shared time source the umbrella RFC argues for: the
+ * looper uses it now, and voice looping (#9) and the percussion sequencer (#10)
+ * are meant to read the same tempo and the same bar lines rather than each
+ * keeping a clock of its own. Everything time-based is expressed in *beats*;
+ * the tempo is only how fast a beat goes by.
+ */
+export const TRANSPORT = {
+  /** Beats in a bar. Loop length, arming, and quantisation are all counted in these. */
+  beatsPerBar: 4,
+  /** Tempo used before the player has chosen one (BPM). */
+  defaultBpm: 100,
+  /** Loop length used before the player has chosen one, in bars. */
+  defaultBars: 4,
+  /** Loop lengths the picker offers, in bars. */
+  barChoices: [1, 2, 4, 8],
+  /** Tempos the picker offers (BPM). */
+  tempoChoices: [60, 70, 80, 90, 100, 110, 120, 132, 140, 160],
+  /**
+   * The grid a recorded onset snaps to, in beats.
+   *
+   * A quarter of a beat is a sixteenth note in 4/4 — fine enough that a
+   * deliberate performance is unharmed, coarse enough that frame jitter in the
+   * onset does not smear the loop.
+   */
+  quantiseBeats: 0.25,
+} as const;
+
+/** Where the loop's tempo and length are remembered between visits. */
+export const TEMPO_STORAGE_KEY = "etherphone.tempo";
+export const BARS_STORAGE_KEY = "etherphone.bars";
+
+/**
+ * Where the looper's on/off setting is remembered.
+ *
+ * Looping is an advanced feature — it asks a player to think in layers and bars
+ * — and the instrument plays perfectly well without it. So it can be turned off
+ * *completely*: no transport, no layers, no fist gestures, no lanes. That is a
+ * different thing from a hidden panel, and the difference is the point.
+ */
+export const LOOPING_STORAGE_KEY = "etherphone.looping";
+
+/**
+ * The transport, by fist.
+ *
+ * The menu is deliberate — open it, pick a menu, dwell on an option — which is
+ * right for a setting and far too slow for a transport a player reaches for
+ * mid-phrase. So the transport gets the fast path: close one hand and flick.
+ *
+ * A closed hand is the right modifier because it is already *silent* in both
+ * modes, so holding one can never cost a note, and it cannot be mistaken for
+ * playing. The dials below are what decide whether a flick feels like a flick.
+ */
+export const TRANSPORT_GESTURE = {
+  /**
+   * How long the fist is held before a flick counts (ms).
+   *
+   * The motion of *closing* the hand moves the wrist, and that is not a flick;
+   * nothing is read until the hand has settled into the fist.
+   */
+  armMs: 140,
+  /**
+   * How long a flick may take (ms).
+   *
+   * A move slower than this is a drift, not a flick — the hand is re-anchored
+   * where it is, so a player can keep the fist closed and try again rather than
+   * having to reopen it.
+   */
+  flickMs: 650,
+  /**
+   * How far the wrist must travel to count as a flick, in normalised frame
+   * units. Deliberately large: a flick is a flick, not a wobble.
+   */
+  travel: 0.1,
+} as const;
+
 /** Synth voicing and filter response. */
 export const AUDIO = {
   /** Lowpass cutoff with a perfectly centred hand. */
