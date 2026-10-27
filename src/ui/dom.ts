@@ -15,6 +15,7 @@ export interface AppElements {
   readonly filterDisplay: HTMLElement;
   readonly volumeBars: readonly HTMLElement[];
   readonly keySelect: HTMLSelectElement;
+  readonly gestureMapSelect: HTMLSelectElement;
   readonly instrumentSelect: HTMLSelectElement;
   readonly loadWavetable: HTMLButtonElement;
   readonly loadSample: HTMLButtonElement;
@@ -25,6 +26,7 @@ export interface AppElements {
   readonly helpButton: HTMLButtonElement;
   readonly helpModal: HTMLElement;
   readonly closeHelp: HTMLButtonElement;
+  readonly helpGestureRows: HTMLElement;
   readonly startOverlay: HTMLElement;
 }
 
@@ -55,6 +57,7 @@ export function getAppElements(): AppElements {
     filterDisplay: requireElement("#distortionDisplay"),
     volumeBars: Array.from(document.querySelectorAll<HTMLElement>(".vol-bar")),
     keySelect: requireElement<HTMLSelectElement>("#keySelect"),
+    gestureMapSelect: requireElement<HTMLSelectElement>("#gestureMapSelect"),
     instrumentSelect: requireElement<HTMLSelectElement>("#instrumentSelect"),
     loadWavetable: requireElement<HTMLButtonElement>("#loadWavetable"),
     loadSample: requireElement<HTMLButtonElement>("#loadSample"),
@@ -65,6 +68,7 @@ export function getAppElements(): AppElements {
     helpButton: requireElement<HTMLButtonElement>("#helpButton"),
     helpModal: requireElement("#helpModal"),
     closeHelp: requireElement<HTMLButtonElement>("#closeHelp"),
+    helpGestureRows: requireElement("#helpGestureRows"),
     startOverlay: requireElement("#startOverlay"),
   };
 }

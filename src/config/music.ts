@@ -22,15 +22,6 @@ export const DEGREE_SEMITONES: Record<number, number> = {
   7: -1,
 };
 
-/** Roman numeral keyed by how many fingers are extended on the chord hand. */
-export const ROMAN_BY_FINGER_COUNT: Record<number, Numeral> = {
-  1: "I",
-  2: "II",
-  3: "III",
-  4: "IV",
-  5: "V",
-};
-
 /** Scale degree keyed by roman numeral. */
 export const NUMERAL_TO_DEGREE: Record<Numeral, number> = {
   I: 1,

@@ -47,6 +47,12 @@ export const VOLUME_BOTTOM_Y = 0.95;
 /** Radius of the hand-skeleton dots drawn onto the overlay, in canvas pixels. */
 export const LANDMARK_DOT_RADIUS = 4;
 
+/**
+ * Where the chosen gesture map is remembered between visits. A map that vanished
+ * on reload would be a toy, so the picker's choice is persisted.
+ */
+export const GESTURE_MAP_STORAGE_KEY = "etherphone.gesture-map";
+
 /** Synth voicing and filter response. */
 export const AUDIO = {
   /** Lowpass cutoff with a perfectly centred hand. */

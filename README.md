@@ -78,6 +78,7 @@ will load the app but cannot reach the camera.
 
 - Left hand chooses the chord and, by tilt, whether it is major or minor
 - Right hand chooses the voicing and the expression
+- A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -86,7 +87,7 @@ will load the app but cannot reach the camera.
 **Next, in the order the RFCs argue for**
 
 - Change key, instrument, and transport by gesture, with dwell instead of click
-- Remap the gesture vocabulary, and choose chord sets smaller than the full seven
+- Build your own gesture map, by gesture rather than by mouse
 - A mono voice for leads and basslines
 - Record musical intent and loop it against a real tempo
 - Capture the microphone and loop voice as a layer
@@ -159,6 +160,8 @@ src/
 
   music/
     harmony.ts             Roman numeral + tonic -> note names and frequencies.
+    gesture-map.ts         The gesture vocabulary as data: hand shapes as bitmasks,
+                           and the Classic, Triad, and Pentatonic presets.
     voicings.ts            The four right-hand voicings per mode, each with a label
                            and a note selector, so readout and audio cannot drift.
     stabilizer.ts          Temporal smoothing: holds a chord before committing it,
@@ -190,7 +193,7 @@ src/
     dom.ts                 The full list of ids and classes the app expects.
     hud.ts                 Chord, quality, and filter readouts.
     volume-meter.ts        The eight-segment volume meter.
-    gesture-guide.ts       The scale-degree cheat sheet.
+    gesture-guide.ts       The scale-degree cheat sheet, rendered from the active map.
     help-modal.ts          The "how to play" modal.
     start-overlay.ts       The click-to-enable-audio gate.
 ```
@@ -203,7 +206,17 @@ and it will make a mic loop one too.
 
 ### How the gestures map to music
 
-**Left hand — chord**
+The left hand's vocabulary is a **gesture map**, chosen in the picker next to the key.
+Three presets ship; the choice is remembered between visits.
+
+- **Classic** — the inherited vocabulary, and the default, so existing players'
+  hands keep working unchanged.
+- **Triad** — three chords only, I, IV, and V, on one to three fingers. Four or
+  more fingers play nothing, so a degree you are not using cannot fire.
+- **Pentatonic** — the five pentatonic degrees on one to five fingers. It needs no
+  rock sign, which is also the shape some players cannot make.
+
+**Left hand — chord** (the Classic map)
 
 | Input                 | Result           |
 | --------------------- | ---------------- |
@@ -225,11 +238,15 @@ The chord hand feeds `ChordStabilizer`, which requires a new chord to hold for 1
 before it is committed and tolerates a 50ms dropout. That is why the instrument does
 not flicker between chords when MediaPipe loses a hand for a frame.
 
-This vocabulary is inherited from Gesture Synth, and it is a _diatonic seventh-chord_
-vocabulary: it assumes seven degrees and a hand that can make a rock sign. [RFC #8](https://github.com/therebelrobot/etherphone/issues/8)
-proposes making it data, with presets — so a player can work in a pentatonic or modal
-idiom, choose only the three chords they want, or reach them with shapes their hands
-actually make.
+This vocabulary is inherited from Gesture Synth, and the Classic map is a _diatonic
+seventh-chord_ vocabulary: it assumes seven degrees and a hand that can make a rock
+sign. [RFC #8](https://github.com/therebelrobot/etherphone/issues/8) made the mapping
+**data** — a hand shape is a bitmask over the five fingers, and a map is a table from
+shape to scale degree — so a player can work in a pentatonic idiom, choose only the
+three chords they want, or reach them with shapes their hands actually make. The
+presets ship; a gesture-driven editor for building custom maps is the remaining half
+of that RFC, and waits on the gesture menu ([#4](https://github.com/therebelrobot/etherphone/issues/4))
+so it can be used without a keyboard.
 
 ### Instruments
 

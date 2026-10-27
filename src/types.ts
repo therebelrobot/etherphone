@@ -25,6 +25,40 @@ export type Numeral = "I" | "II" | "III" | "IV" | "V" | "VI" | "VII";
 /** A numeral whose case carries the mode: `I` is major, `i` is minor. */
 export type ChordNumeral = Numeral | Lowercase<Numeral>;
 
+/**
+ * Which fingers a hand is holding up, as a bitmask over
+ * [thumb, index, middle, ring, pinky] — so a shape is a single number in 0..31.
+ *
+ * Collapsing the hand to one number is what lets a gesture vocabulary be a
+ * lookup table rather than a chain of conditions.
+ */
+export type HandShape = number;
+
+/**
+ * A gesture vocabulary: which hand shape plays which scale degree.
+ *
+ * `shapes` is the whole truth for classification. A `null` target means the
+ * shape deliberately plays nothing, which is how a map removes a degree it does
+ * not want — or builds in a rest.
+ */
+export interface GestureMap {
+  readonly id: string;
+  readonly label: string;
+  /** A one-line summary, shown as the picker option's tooltip. */
+  readonly description: string;
+  readonly shapes: ReadonlyMap<HandShape, ChordNumeral | null>;
+  /** Whether hand tilt picks major/minor, or the numeral's own case is kept. */
+  readonly tiltPicksMode: boolean;
+}
+
+/** One row of a map's cheat sheet: a shape, the degree it reaches, and what it plays. */
+export interface GestureRow {
+  readonly shape: HandShape;
+  readonly numeral: ChordNumeral;
+  /** The scale degree, 1–7, used to pick the note name for the current key. */
+  readonly degree: number;
+}
+
 /** The twelve selectable tonic keys. */
 export type KeyName = "A" | "Bb" | "B" | "C" | "Db" | "D" | "Eb" | "E" | "F" | "Gb" | "G" | "Ab";
 
