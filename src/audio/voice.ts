@@ -47,6 +47,19 @@ export interface Voice {
    * no-op once it has returned `true`.
    */
   play(freqs: number[]): boolean;
+  /**
+   * Retunes the sounding notes in place, without restarting them.
+   *
+   * This is what makes continuous pitch possible. {@link play} rebuilds its
+   * nodes whenever the frequencies change — right for a chord, wrong for a
+   * glide, which changes pitch every frame and would retrigger on each one. A
+   * voice that cannot retune simply omits this, and the caller falls back to
+   * {@link play}; the sampler and the oscillator banks both implement it.
+   *
+   * Implementations must treat a call with the same frequencies as a no-op, the
+   * same way {@link play} does.
+   */
+  retune?(freqs: number[]): boolean;
   /** Silences every sounding note, leaving the graph connected. */
   release(): void;
   /** Releases and tears down the graph. The voice is not reused afterwards. */

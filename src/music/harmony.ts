@@ -15,8 +15,18 @@ import type { ChordNumeral, ChordTones, KeyName, Numeral } from "../types";
 const SEMITONES_PER_OCTAVE = 12;
 
 /** Converts a semitone offset into a frequency multiplier. */
-function semitoneRatio(semitones: number): number {
+export function semitoneRatio(semitones: number): number {
   return Math.pow(2, semitones / SEMITONES_PER_OCTAVE);
+}
+
+/**
+ * The tonic as the instrument actually tunes it.
+ *
+ * The three sharpest keys are dropped an octave to keep the range playable,
+ * which is a property of the instrument rather than of any one voice.
+ */
+export function getPlayableTonic(tonicFrequency: number): number {
+  return OCTAVE_DOWN_TONICS.includes(tonicFrequency) ? tonicFrequency / 2 : tonicFrequency;
 }
 
 /** The written note at a given scale degree of a key. */
@@ -33,10 +43,7 @@ export function getScaleNoteName(keyName: KeyName, degree: number): string {
 export function getDegreeFrequency(degree: number, tonicFrequency: number): number {
   const semitones = DEGREE_SEMITONES[degree];
 
-  // The three sharpest keys are dropped an octave to keep the range playable.
-  const tonic = OCTAVE_DOWN_TONICS.includes(tonicFrequency) ? tonicFrequency / 2 : tonicFrequency;
-
-  return tonic * semitoneRatio(semitones);
+  return getPlayableTonic(tonicFrequency) * semitoneRatio(semitones);
 }
 
 /** Human-readable chord name, e.g. `Cm` for a minor tonic. */

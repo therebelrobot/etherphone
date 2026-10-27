@@ -73,6 +73,42 @@ export interface ChordState {
   readonly thumbDown: boolean;
 }
 
+/**
+ * Which strategy turns a frame's intent into sound.
+ *
+ * The instrument used to assume every frame was a chord. A mode is that
+ * assumption made explicit, so a lead line (and, later, a drum kit) can be
+ * addressed through the same path rather than a parallel one.
+ */
+export type InstrumentMode = "chord" | "mono";
+
+/**
+ * How the mono voice reads the pitch hand.
+ *
+ * - `quantised` — the nearest scale degree, sustained, legato between degrees.
+ * - `glide` — a continuous pitch, sliding between degrees.
+ * - `harp` — the nearest degree, plucked afresh on entering one, so a sweep
+ *   across the frame plays a harp-like run.
+ */
+export type MonoStyle = "quantised" | "glide" | "harp";
+
+/** The mono voice's reading of one frame. */
+export interface MonoReading {
+  /** The pitch to sound, in Hz. */
+  readonly frequency: number;
+  /** The scale degree reached: 1-based, counted past the seventh. */
+  readonly degree: number;
+  /** Whole octaves above the tonic, for the readout. */
+  readonly octave: number;
+  /**
+   * True when the pitch hand has just entered this degree.
+   *
+   * The harp style plucks on this edge and lets the note ring between edges;
+   * the other styles sound continuously and ignore it.
+   */
+  readonly isNewDegree: boolean;
+}
+
 /** Every frequency the harmony engine can derive from a single chord root. */
 export interface ChordTones {
   readonly root: number;

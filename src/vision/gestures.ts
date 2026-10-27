@@ -141,6 +141,16 @@ export function getHandHorizontalTilt(landmarks: Hand, handedness: Handedness): 
   }
 }
 
+/**
+ * The wrist's height in the frame: 0 at the top edge, 1 at the bottom.
+ *
+ * Raw, unlike {@link getVolumeFromHeight}, because the mono voice maps it onto
+ * pitch rather than loudness and wants its own band.
+ */
+export function getHandHeight(landmarks: Hand): number {
+  return landmarks[WRIST].y;
+}
+
 /** Wrist height, mapped onto 0..1 with higher meaning louder. */
 export function getVolumeFromHeight(landmarks: Hand): number {
   const wrist = landmarks[WRIST];

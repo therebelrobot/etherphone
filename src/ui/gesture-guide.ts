@@ -11,6 +11,11 @@ import { describeShape, getGestureRows } from "../music/gesture-map";
 import type { GestureMap, KeyName } from "../types";
 
 export class GestureGuide {
+  /** Whether the guide applies at all — it does not in mono mode. */
+  private enabled = true;
+  /** Whether the player has it open, remembered across mode switches. */
+  private opened = false;
+
   constructor(
     private readonly root: HTMLElement,
     private readonly toggle: HTMLButtonElement,
@@ -39,8 +44,26 @@ export class GestureGuide {
       .join("");
   }
 
+  /**
+   * Shows or hides the whole guide, toggle included.
+   *
+   * The chord vocabulary is meaningless while the instrument is playing single
+   * notes, so mono mode disables the guide rather than leaving a cheat sheet up
+   * that describes shapes nothing responds to.
+   */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    this.toggle.classList.toggle("hidden", !enabled);
+    this.applyVisibility();
+  }
+
   private toggleVisibility(): void {
-    const isHidden = this.root.classList.toggle("hidden");
-    this.toggle.textContent = isHidden ? "Open Guide" : "Close Guide";
+    this.opened = !this.opened;
+    this.applyVisibility();
+    this.toggle.textContent = this.opened ? "Close Guide" : "Open Guide";
+  }
+
+  private applyVisibility(): void {
+    this.root.classList.toggle("hidden", !this.enabled || !this.opened);
   }
 }

@@ -15,6 +15,8 @@ export interface AppElements {
   readonly filterDisplay: HTMLElement;
   readonly volumeBars: readonly HTMLElement[];
   readonly keySelect: HTMLSelectElement;
+  readonly modeSelect: HTMLSelectElement;
+  readonly monoStyleSelect: HTMLSelectElement;
   readonly gestureMapSelect: HTMLSelectElement;
   readonly instrumentSelect: HTMLSelectElement;
   readonly loadWavetable: HTMLButtonElement;
@@ -57,6 +59,8 @@ export function getAppElements(): AppElements {
     filterDisplay: requireElement("#distortionDisplay"),
     volumeBars: Array.from(document.querySelectorAll<HTMLElement>(".vol-bar")),
     keySelect: requireElement<HTMLSelectElement>("#keySelect"),
+    modeSelect: requireElement<HTMLSelectElement>("#modeSelect"),
+    monoStyleSelect: requireElement<HTMLSelectElement>("#monoStyleSelect"),
     gestureMapSelect: requireElement<HTMLSelectElement>("#gestureMapSelect"),
     instrumentSelect: requireElement<HTMLSelectElement>("#instrumentSelect"),
     loadWavetable: requireElement<HTMLButtonElement>("#loadWavetable"),

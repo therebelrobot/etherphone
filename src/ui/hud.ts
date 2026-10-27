@@ -18,6 +18,11 @@ export class Hud {
     this.chordEl.textContent = numeral ? `${chordName}(${numeral})` : "--";
   }
 
+  /** Shows a single note's name, which is what the mono voice produces. */
+  setNote(noteName: string): void {
+    this.chordEl.textContent = noteName;
+  }
+
   /** Shows the active voicing's label, annotated when dropped an octave. */
   setQuality(label: string | undefined, thumbDown: boolean): void {
     this.qualityEl.textContent = label ? `${label}${thumbDown ? " (-8ve)" : ""}` : "--";

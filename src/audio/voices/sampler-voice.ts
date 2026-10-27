@@ -96,6 +96,28 @@ export class SamplerVoice implements Voice {
     this.currentKey = null;
   }
 
+  /**
+   * Slides the sounding notes to new pitches by ramping their playback rates.
+   *
+   * Same contract as the oscillator banks: a note count that does not match
+   * falls back to a rebuild, because there is nothing to retune.
+   */
+  retune(freqs: number[]): boolean {
+    if (!this.ctx || freqs.length !== this.notes.length || freqs.length === 0) {
+      return this.play(freqs);
+    }
+
+    const now = this.ctx.currentTime;
+
+    freqs.forEach((freq, index) => {
+      const rate = playbackRateFor(freq, this.rootFrequency);
+      this.notes[index].source.playbackRate.setTargetAtTime(rate, now, AUDIO.glideSeconds);
+    });
+
+    this.currentKey = frequenciesKey(freqs);
+    return true;
+  }
+
   dispose(): void {
     this.release();
     this.ctx = null;
