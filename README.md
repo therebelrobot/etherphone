@@ -348,11 +348,42 @@ the two sets would be mutually unreachable by gesture. The switch keeps the menu
 so the ring re-renders in place and picking the other vocabulary is one continuous
 movement rather than two trips through the menu.
 
+#### Two clusters, one hand each
+
+The menu used to mix two kinds of thing in one ring: values you can choose, and
+doors into somewhere else. "Classic" is a choice _in_ the menu; "Key" is a way
+_out_ of it, and they were drawn identically. So each kind now has its own cluster
+and its own hand:
+
+- the **left hand picks the menu** you are in — Vocabulary, Key, Instrument, Settings;
+- the **right hand picks the option** within it.
+
+Both are live at once, so changing menu and changing option are one movement rather
+than two trips. Each cluster is anchored to its own hand, so each hand starts inside
+its own dead zone and neither can select anything by resting.
+
+The menus cluster is drawn to read as a way elsewhere, in **three ways at once**
+rather than colour alone — colour fails for colour-blind players and washes out over
+a busy camera frame. It takes a cool accent against the options' gold, a chevron
+before each label, and a dashed outline. The menu in force is filled, so you can see
+where you are.
+
+#### One hand, in stages
+
+With one hand the same two levels happen in turn rather than at once: open the menu,
+hold on a menu, then hold on an option. After a menu is chosen the options are
+**anchored where that menu item was** — the hand is already out there, so it lands in
+the middle of the new cluster and cannot select something by simply not moving. The
+cluster waiting its turn is drawn faded, so it is clear which one the hand is on.
+
+It is a setting in **Settings**, which is also where the mode lives now: the mode is
+not a value of the vocabulary, it decides which vocabulary there is.
+
 #### The key and the instrument open a list
 
 A ring stops working somewhere around eight options: twelve keys would need more
-circumference than the circle has. So the ring also carries **Key** and **Instrument**,
-and choosing one opens a **list** down the canvas instead:
+circumference than the circle has. So the Key and Instrument menus open as a **list**
+down the canvas instead:
 
 - the hand's **height** picks the row, so the choice is one dimension rather than two,
   and a hand does not have to be over the label horizontally;

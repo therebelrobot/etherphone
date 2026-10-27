@@ -69,6 +69,9 @@ export const GESTURE_MAP_STORAGE_KEY = "etherphone.gesture-map";
 export const MODE_STORAGE_KEY = "etherphone.mode";
 export const MONO_STYLE_STORAGE_KEY = "etherphone.mono-style";
 
+/** Where one-handed menu staging is remembered between visits. */
+export const SINGLE_HANDED_STORAGE_KEY = "etherphone.single-handed";
+
 /**
  * The gesture menu.
  *

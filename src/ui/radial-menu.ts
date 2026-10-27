@@ -47,6 +47,13 @@ export interface ClusterFrame {
   readonly hoveredId: string | null;
   /** How far the dwell has filled, 0..1. */
   readonly dwellProgress: number;
+  /**
+   * Whether this is the cluster the hand is driving.
+   *
+   * In single-handed mode one cluster waits its turn, and is drawn faded so it
+   * is clear which one the hand is actually on.
+   */
+  readonly isActive: boolean;
   /** Milliseconds since the menu opened, which drives the fan-out. */
   readonly elapsedMs: number;
 }
@@ -380,7 +387,7 @@ export function drawMenuBackdrop(ctx: CanvasRenderingContext2D | null, elapsedMs
   ctx.fillStyle = GOLD;
   ctx.fillText(DISMISS_HINT, ctx.canvas.width / 2, 44);
 
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = fade;
   ctx.restore();
 }
 
@@ -392,12 +399,16 @@ export function drawCluster(
 ): void {
   if (!ctx) return;
 
-  if (frame.layout === "list") {
-    drawListCluster(ctx, frame, style);
-    return;
-  }
+  // A cluster waiting its turn sits back, so the one the hand is on reads first.
+  // Threaded through as a multiplier rather than set on the context, because
+  // each item sets its own alpha and would otherwise overwrite it.
+  const fade = frame.isActive ? 1 : 0.35;
 
-  drawRingCluster(ctx, frame, style);
+  if (frame.layout === "list") {
+    drawListCluster(ctx, frame, style, fade);
+  } else {
+    drawRingCluster(ctx, frame, style, fade);
+  }
 }
 
 /** Draws a cluster laid out around its anchor. */
@@ -405,6 +416,7 @@ function drawRingCluster(
   ctx: CanvasRenderingContext2D,
   frame: ClusterFrame,
   style: ClusterStyle,
+  fade: number,
 ): void {
   const { slots, items, activeId, centerX, centerY, cursor, hoveredId, dwellProgress, elapsedMs } =
     frame;
@@ -436,7 +448,7 @@ function drawRingCluster(
       0,
       Math.PI * 2,
     );
-    ctx.globalAlpha = state.alpha;
+    ctx.globalAlpha = state.alpha * fade;
     ctx.fillStyle = isHovered ? style.hoverFill : isActive ? style.activeFill : OPTION_IDLE;
     ctx.fill();
     ctx.lineWidth = isHovered ? 3 : isActive ? 2 : 1;
@@ -447,11 +459,11 @@ function drawRingCluster(
     ctx.restore();
 
     // The label stays upright, and arrives with the option rather than before it.
-    ctx.globalAlpha = state.alpha;
+    ctx.globalAlpha = state.alpha * fade;
     ctx.fillStyle = style.accent;
     ctx.font = "16px monospace";
     ctx.fillText(item ? labelFor(item, style) : slot.label, state.x, state.y);
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = fade;
 
     // The dwell ring: an arc that closes as the hold completes, so the commit
     // is never a surprise.
@@ -471,7 +483,7 @@ function drawRingCluster(
   });
 
   // A quiet mark where the cluster is centred, so the dead zone is visible.
-  ctx.globalAlpha = clamp01(elapsedMs / 200);
+  ctx.globalAlpha = clamp01(elapsedMs / 200) * fade;
   ctx.beginPath();
   ctx.arc(centerX, centerY, 3, 0, Math.PI * 2);
   ctx.fillStyle = EDGE;
@@ -485,7 +497,7 @@ function drawRingCluster(
     ctx.stroke();
   }
 
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = fade;
   ctx.restore();
 }
 
@@ -494,6 +506,7 @@ function drawListCluster(
   ctx: CanvasRenderingContext2D,
   frame: ClusterFrame,
   style: ClusterStyle,
+  fade: number,
 ): void {
   const { rows, items, activeId, centerY, hoveredId, dwellProgress, elapsedMs } = frame;
   const { width } = ctx.canvas;
@@ -517,7 +530,7 @@ function drawListCluster(
     const top = state.y - state.height / 2 + 3;
     const barHeight = state.height - 6;
 
-    ctx.globalAlpha = state.alpha;
+    ctx.globalAlpha = state.alpha * fade;
 
     ctx.beginPath();
     ctx.roundRect(left, top, rowWidth, barHeight, 6);
@@ -533,7 +546,7 @@ function drawListCluster(
     if (isHovered && dwellProgress > 0) {
       ctx.save();
       ctx.clip();
-      ctx.globalAlpha = 0.35;
+      ctx.globalAlpha = 0.35 * fade;
       ctx.fillStyle = style.accent;
       ctx.fillRect(left, top, rowWidth * dwellProgress, barHeight);
       ctx.restore();
@@ -542,9 +555,9 @@ function drawListCluster(
     ctx.fillStyle = style.accent;
     ctx.fillText(item ? labelFor(item, style) : row.label, width / 2, state.y);
 
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = fade;
   });
 
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = fade;
   ctx.restore();
 }

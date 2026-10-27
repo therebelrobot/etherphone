@@ -49,6 +49,14 @@ export interface MenuInput {
   readonly optionCursor: CanvasPoint | null;
   readonly canvasWidth: number;
   readonly canvasHeight: number;
+  /**
+   * Whether one hand is driving both clusters in turn.
+   *
+   * With two hands both clusters are live at once. With one, the same hand picks
+   * the menu and *then* the option, so only the cluster at the current stage is
+   * read and the other is left showing where you came from.
+   */
+  readonly staged?: boolean;
 }
 
 /** What the caller needs to draw, and what it should do about it. */
@@ -154,6 +162,7 @@ class Pointer {
     canvasHeight: number,
     elapsedMs: number,
     now: number,
+    active = true,
   ): { frame: ClusterFrame; committed: string | null } {
     const isList = cluster.layout === "list";
 
@@ -162,19 +171,24 @@ class Pointer {
     const centerX = isList ? canvasWidth / 2 : (this.anchor?.x ?? canvasWidth / 2);
     const centerY = isList ? canvasHeight / 2 : (this.anchor?.y ?? canvasHeight / 2);
 
-    this.trackSteering(cursor);
-
     const slots = isList ? [] : layoutRadial(cluster.items, centerX, centerY);
     const rows = isList ? layoutList(cluster.items, canvasHeight) : [];
 
+    // A cluster waiting its turn is drawn, but nothing in it can be chosen.
     let hoveredId: string | null = null;
-    if (this.steering && cursor) {
-      hoveredId = isList
-        ? (listRowAt(rows, cursor)?.id ?? null)
-        : (slotAt(slots, cursor, centerX, centerY)?.id ?? null);
-    }
+    let committed: string | null = null;
 
-    const committed = this.dwell.update(hoveredId, now);
+    if (active) {
+      this.trackSteering(cursor);
+
+      if (this.steering && cursor) {
+        hoveredId = isList
+          ? (listRowAt(rows, cursor)?.id ?? null)
+          : (slotAt(slots, cursor, centerX, centerY)?.id ?? null);
+      }
+
+      committed = this.dwell.update(hoveredId, now);
+    }
 
     return {
       frame: {
@@ -185,9 +199,10 @@ class Pointer {
         rows,
         centerX,
         centerY,
-        cursor,
+        cursor: active ? cursor : null,
         hoveredId,
         dwellProgress: hoveredId === null ? 0 : this.dwell.progress(now),
+        isActive: active,
         elapsedMs,
       },
       committed,
@@ -233,6 +248,7 @@ function emptyFrame(canvasWidth: number, canvasHeight: number): ClusterFrame {
     cursor: null,
     hoveredId: null,
     dwellProgress: 0,
+    isActive: false,
     elapsedMs: 0,
   };
 }
@@ -249,6 +265,8 @@ export class MenuController {
   private idleSince = 0;
   /** When the menu opened, so the fan-out can be animated from it. */
   private openedAt = 0;
+  /** Which cluster the one hand is driving, in single-handed mode. */
+  private stage: MenuClusterName = "menus";
 
   constructor(options: MenuControllerOptions = {}) {
     this.idleTimeoutMs = options.idleTimeoutMs ?? CONTROL.idleTimeoutMs;
@@ -296,6 +314,7 @@ export class MenuController {
       this.isOpen = true;
       this.idleSince = now;
       this.openedAt = now;
+      this.stage = "menus";
       this.menus.open(input.menuCursor, canvasWidth, canvasHeight);
       this.options.open(input.optionCursor, canvasWidth, canvasHeight);
       justOpened = true;
@@ -304,7 +323,10 @@ export class MenuController {
     }
 
     const elapsedMs = now - this.openedAt;
+    const staged = input.staged === true;
 
+    // With one hand only the cluster at the current stage is read; the other is
+    // still laid out so you can see where you came from.
     const menuRead = this.menus.read(
       input.menus,
       input.menuCursor,
@@ -312,6 +334,7 @@ export class MenuController {
       canvasHeight,
       elapsedMs,
       now,
+      !staged || this.stage === "menus",
     );
     const optionRead = this.options.read(
       input.options,
@@ -320,6 +343,7 @@ export class MenuController {
       canvasHeight,
       elapsedMs,
       now,
+      !staged || this.stage === "options",
     );
 
     // Pointing at anything keeps the menu alive; only idling times it out.
@@ -341,6 +365,32 @@ export class MenuController {
       optionsFrame = withoutHover(optionsFrame);
       this.options.release(input.optionCursor);
       this.idleSince = now;
+
+      if (staged) {
+        // Hand over to the options, anchored where the chosen menu item was.
+        // The hand is out there, so it lands in the middle of the new cluster
+        // and cannot select anything by simply not moving.
+        this.stage = "options";
+
+        const chosen = menusFrame.slots.find((slot) => slot.id === menuRead.committed);
+        this.options.open(
+          chosen ? { x: chosen.x, y: chosen.y } : input.optionCursor,
+          canvasWidth,
+          canvasHeight,
+        );
+
+        // Re-lay the options out at the new anchor, so the frame handed back is
+        // the one the player will see rather than the one from before the swap.
+        optionsFrame = this.options.read(
+          input.options,
+          input.optionCursor,
+          canvasWidth,
+          canvasHeight,
+          elapsedMs,
+          now,
+          false,
+        ).frame;
+      }
     } else if (optionRead.committed !== null) {
       const item = input.options.items.find((candidate) => candidate.id === optionRead.committed);
 
@@ -376,6 +426,7 @@ export class MenuController {
   /** Closes the menu, e.g. when the mode changes underneath it. */
   close(): void {
     this.isOpen = false;
+    this.stage = "menus";
     this.menus.reset();
     this.options.reset();
   }

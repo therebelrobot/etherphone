@@ -19,6 +19,7 @@ import {
   MODE_STORAGE_KEY,
   MONO_STYLE_STORAGE_KEY,
   PROJECT_NAME,
+  SINGLE_HANDED_STORAGE_KEY,
 } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
@@ -61,6 +62,9 @@ import {
 import { createHandLandmarker } from "./vision/hand-tracking";
 import { drawFrame, landmarkToCanvas } from "./vision/overlay";
 import { drawEnergy } from "./visuals/energy";
+
+/** The id of the one-handed toggle, which is not a mode or a value. */
+const ONE_HANDED_ID = "one-handed";
 
 /** The key name carried on the selected option's `data-note` attribute. */
 function readKeyName(select: HTMLSelectElement): KeyName {
@@ -142,6 +146,7 @@ export class GestureSynthApp {
     this.keyName = readKeyName(this.els.keySelect);
     this.mode = restoreSelect(this.els.modeSelect, MODE_STORAGE_KEY) as InstrumentMode;
     this.monoStyle = restoreSelect(this.els.monoStyleSelect, MONO_STYLE_STORAGE_KEY) as MonoStyle;
+    this.singleHanded = this.readStoredSingleHanded();
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
     this.gestureMap = getGestureMap(
@@ -289,6 +294,21 @@ export class GestureSynthApp {
   private setInstrument(id: string): void {
     this.els.instrumentSelect.value = id;
     this.synth.setInstrument(id);
+  }
+
+  /** Reads the remembered one-handed setting. */
+  private readStoredSingleHanded(): boolean {
+    try {
+      return window.localStorage.getItem(SINGLE_HANDED_STORAGE_KEY) === "on";
+    } catch {
+      return false;
+    }
+  }
+
+  /** Turns one-handed staging on or off, and remembers it. */
+  private setSingleHanded(enabled: boolean): void {
+    this.singleHanded = enabled;
+    remember(SINGLE_HANDED_STORAGE_KEY, enabled ? "on" : "off");
   }
 
   /** Switches the gesture vocabulary and keeps the readouts in step. */
@@ -519,18 +539,28 @@ export class GestureSynthApp {
    *   instrument silent while a setting is being chosen.
    */
   private updateControlMenu(now: number, left: Hand | null, right: Hand | null): boolean {
-    const bothClosed = left !== null && right !== null && isHandClosed(left) && isHandClosed(right);
+    const leftClosed = left !== null && isHandClosed(left);
+    const rightClosed = right !== null && isHandClosed(right);
+
+    // One hand closed is the engage gesture when there is only one hand driving;
+    // otherwise it takes both, so the menu cannot open on a single resting fist.
+    const bothClosed = this.singleHanded ? leftClosed || rightClosed : leftClosed && rightClosed;
+
+    // In single-handed mode one hand drives both stages, so it supplies both
+    // cursors; otherwise each hand drives its own cluster.
+    const soloHand = right ?? left;
+    const solo = this.singleHanded && soloHand ? this.cursorFor(soloHand) : null;
 
     const update = this.menu.update(
       {
         menus: { layout: "radial", items: MENU_TOPICS, activeId: this.menuId },
         options: this.optionsCluster(),
         bothClosed,
-        // The left hand picks the menu; the right hand picks the option in it.
-        menuCursor: left ? this.cursorFor(left) : null,
-        optionCursor: right ? this.cursorFor(right) : null,
+        menuCursor: solo ?? (left ? this.cursorFor(left) : null),
+        optionCursor: solo ?? (right ? this.cursorFor(right) : null),
         canvasWidth: this.els.canvas.width,
         canvasHeight: this.els.canvas.height,
+        staged: this.singleHanded,
       },
       now,
     );
@@ -599,11 +629,20 @@ export class GestureSynthApp {
     }
 
     if (this.menuId === "settings") {
+      const oneHanded: MenuOption = {
+        id: ONE_HANDED_ID,
+        label: this.singleHanded ? "One hand: on" : "One hand: off",
+        // A settings panel is somewhere you set more than one thing, so its
+        // choices leave it open; dismissing is how you leave.
+        keepsMenuOpen: true,
+      };
+
       return {
         layout: "radial",
         items: [
-          { id: "chord", label: "Chords" },
-          { id: "mono", label: "Mono" },
+          { id: "chord", label: "Chords", keepsMenuOpen: true },
+          { id: "mono", label: "Mono", keepsMenuOpen: true },
+          oneHanded,
         ],
         activeId: this.mode,
       };
@@ -633,6 +672,11 @@ export class GestureSynthApp {
     }
 
     if (this.menuId === "settings") {
+      if (choice.id === ONE_HANDED_ID) {
+        this.setSingleHanded(!this.singleHanded);
+        return;
+      }
+
       // Settings holds the mode, which is what the vocabulary menu depends on.
       this.setMode(choice.id as InstrumentMode);
       return;
@@ -657,6 +701,8 @@ export class GestureSynthApp {
 
   /** Which menu the left hand has chosen, and the right hand is choosing within. */
   private menuId: MenuTopic = "vocabulary";
+  /** Whether one hand drives the whole menu, a stage at a time. */
+  private singleHanded = false;
 
   /**
    * The right hand's palm centre, in canvas coordinates, for the menu cursor.

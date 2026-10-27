@@ -340,6 +340,122 @@ describe("MenuController options list", () => {
   });
 });
 
+describe("MenuController single-handed staging", () => {
+  /** One hand, driving both stages. */
+  const SOLO: CanvasPoint = { x: 640, y: 620 };
+
+  const stagedInput = (cursor: CanvasPoint | null, overrides = {}) =>
+    input({
+      staged: true,
+      bothClosed: true,
+      menuCursor: cursor,
+      optionCursor: cursor,
+      ...overrides,
+    });
+
+  function openStaged(controller: MenuController, from = 0): number {
+    controller.update(stagedInput(SOLO), from);
+
+    const opened = from + HOLD;
+    controller.update(stagedInput(SOLO), opened);
+
+    return opened;
+  }
+
+  it("reads only the menus cluster to begin with", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+
+    // The hand is pushed towards an option, but the menus stage is up, so the
+    // options cluster cannot be chosen from yet.
+    const update = controller.update(
+      stagedInput(pointFrom(SOLO, 1, VOCABULARY.length)),
+      opened + 10,
+    );
+
+    expect(update.menus.cursor).not.toBeNull();
+    expect(update.options.cursor).toBeNull();
+    expect(update.options.hoveredId).toBeNull();
+  });
+
+  it("switches to the options once a menu is chosen, and names the cluster", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+    const cursor = pointFrom(SOLO, menuIndex("key"), MENU_TOPICS.length);
+
+    controller.update(stagedInput(cursor), opened + 1);
+    const committed = controller.update(stagedInput(cursor), opened + 1 + DWELL);
+
+    expect(committed.committed).toEqual({ cluster: "menus", id: "key" });
+    expect(committed.isOpen).toBe(true);
+
+    const after = controller.update(stagedInput(cursor), opened + 1 + DWELL + 10);
+    expect(after.options.cursor).not.toBeNull();
+    expect(after.menus.cursor).toBeNull();
+  });
+
+  it("anchors the options where the chosen menu was, so the hand cannot auto-select", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+    const cursor = pointFrom(SOLO, menuIndex("key"), MENU_TOPICS.length);
+
+    controller.update(stagedInput(cursor), opened + 1);
+    controller.update(stagedInput(cursor), opened + 1 + DWELL);
+
+    // The hand has not moved, and the new cluster is anchored where the menu
+    // item it just chose was — so the hand is inside the dead zone, and nothing
+    // is selected.
+    const after = controller.update(stagedInput(cursor), opened + 1 + DWELL + 10);
+    const fromAnchor = Math.hypot(
+      cursor.x - after.options.centerX,
+      cursor.y - after.options.centerY,
+    );
+
+    expect(fromAnchor).toBeLessThan(CONTROL.deadZone);
+    expect(after.options.hoveredId).toBeNull();
+    expect(after.options.dwellProgress).toBe(0);
+  });
+
+  it("lets the same hand then pick an option and close the menu", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+    const menuCursor = pointFrom(SOLO, menuIndex("key"), MENU_TOPICS.length);
+
+    controller.update(stagedInput(menuCursor), opened + 1);
+    const menuCommitted = controller.update(stagedInput(menuCursor), opened + 1 + DWELL);
+    const anchor = { x: menuCommitted.options.centerX, y: menuCommitted.options.centerY };
+
+    // Now the hand pushes out from the new anchor towards an option.
+    const optionCursor = pointFrom(anchor, 1, VOCABULARY.length);
+    const steered = opened + 1 + DWELL + 20;
+
+    controller.update(stagedInput(optionCursor), steered);
+    const committed = controller.update(stagedInput(optionCursor), steered + DWELL);
+
+    expect(committed.committed).toEqual({ cluster: "options", id: "triad" });
+    expect(committed.isOpen).toBe(false);
+  });
+
+  it("starts back at the menus stage on the next open", () => {
+    const controller = makeController();
+    const opened = openStaged(controller);
+    const cursor = pointFrom(SOLO, menuIndex("key"), MENU_TOPICS.length);
+
+    controller.update(stagedInput(cursor), opened + 1);
+    controller.update(stagedInput(cursor), opened + 1 + DWELL);
+
+    // Dismiss, release, and open again: the menu costs a release every time.
+    controller.close();
+    controller.update(stagedInput(null, { bothClosed: false }), opened + 2000);
+
+    const reopened = openStaged(controller, opened + 3000);
+    const update = controller.update(stagedInput(SOLO), reopened);
+
+    expect(update.menus.cursor).not.toBeNull();
+    expect(update.options.cursor).toBeNull();
+  });
+});
+
 describe("menu topic and mode ids", () => {
   it("recognises the menus and nothing else", () => {
     expect(isMenuTopic("vocabulary")).toBe(true);
