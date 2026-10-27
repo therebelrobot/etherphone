@@ -3,7 +3,7 @@
  */
 import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { LANDMARK_DOT_RADIUS } from "../config/constants";
-import type { CoverRect } from "../types";
+import type { CanvasPoint, CoverRect } from "../types";
 
 /**
  * Computes a "cover" crop in source-video pixel space: the largest centred
@@ -28,6 +28,30 @@ export function computeCoverRect(
   const sWidth = srcW;
   const sHeight = srcW / dstRatio;
   return { sx: 0, sy: (srcH - sHeight) / 2, sWidth, sHeight };
+}
+
+/**
+ * Maps a normalised landmark onto the canvas, mirroring it the way the frame is.
+ *
+ * {@link drawFrame} draws inside a horizontally flipped transform, so a
+ * landmark's on-screen position is the mirror of its cover-cropped position.
+ * Anything that has to line up with the drawn skeleton — the menu cursor, and
+ * the hit-testing behind it — must come through here rather than using raw
+ * normalised values, or the menu will select the option on the opposite side.
+ */
+export function landmarkToCanvas(
+  point: { readonly x: number; readonly y: number },
+  srcW: number,
+  srcH: number,
+  canvasWidth: number,
+  canvasHeight: number,
+): CanvasPoint {
+  const { sx, sy, sWidth, sHeight } = computeCoverRect(srcW, srcH, canvasWidth, canvasHeight);
+
+  const canvasX = ((point.x * srcW - sx) / sWidth) * canvasWidth;
+  const canvasY = ((point.y * srcH - sy) / sHeight) * canvasHeight;
+
+  return { x: canvasWidth - canvasX, y: canvasY };
 }
 
 /**

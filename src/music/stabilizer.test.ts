@@ -1,10 +1,77 @@
 import { describe, expect, it } from "vitest";
 import type { ChordState } from "../types";
-import { ChordStabilizer } from "./stabilizer";
+import { ChordStabilizer, DwellStabilizer } from "./stabilizer";
 
 function state(overrides: Partial<ChordState> = {}): ChordState {
   return { chord: "I", isMajorMode: true, qualityIndex: 1, thumbDown: false, ...overrides };
 }
+
+describe("DwellStabilizer", () => {
+  it("commits nothing until the hold has elapsed", () => {
+    const dwell = new DwellStabilizer<string>(100);
+
+    expect(dwell.update("a", 0)).toBeNull();
+    expect(dwell.update("a", 99)).toBeNull();
+    expect(dwell.update("a", 100)).toBe("a");
+  });
+
+  it("restarts the hold when the value changes", () => {
+    const dwell = new DwellStabilizer<string>(100);
+
+    dwell.update("a", 0);
+    expect(dwell.update("b", 50)).toBeNull();
+    expect(dwell.update("b", 149)).toBeNull();
+    expect(dwell.update("b", 150)).toBe("b");
+  });
+
+  it("keeps the committed value while a new one is still being held", () => {
+    const dwell = new DwellStabilizer<string>(100);
+
+    dwell.update("a", 0);
+    expect(dwell.update("a", 100)).toBe("a");
+    expect(dwell.update("b", 120)).toBe("a");
+  });
+
+  it("commits a null reading, which is how a control turns off", () => {
+    const dwell = new DwellStabilizer<boolean>(100);
+
+    dwell.update(true, 0);
+    expect(dwell.update(true, 100)).toBe(true);
+    expect(dwell.update(null, 150)).toBe(true);
+    expect(dwell.update(null, 250)).toBeNull();
+  });
+
+  it("uses the supplied comparison, so rebuilt objects still count as unchanged", () => {
+    interface Reading {
+      readonly degree: number;
+    }
+
+    const dwell = new DwellStabilizer<Reading>(100, (a, b) => a?.degree === b?.degree);
+
+    dwell.update({ degree: 1 }, 0);
+    // A fresh object with the same value must not restart the hold.
+    expect(dwell.update({ degree: 1 }, 100)).toEqual({ degree: 1 });
+  });
+
+  it("exposes the value being held before it commits", () => {
+    const dwell = new DwellStabilizer<string>(100);
+
+    dwell.update("a", 0);
+    expect(dwell.pending).toBe("a");
+  });
+
+  it("forgets everything on reset", () => {
+    const dwell = new DwellStabilizer<string>(100);
+
+    dwell.update("a", 0);
+    dwell.update("a", 100);
+
+    dwell.reset();
+
+    expect(dwell.pending).toBeNull();
+    expect(dwell.update("a", 200)).toBeNull();
+  });
+});
 
 describe("ChordStabilizer", () => {
   it("holds nothing until a candidate has been steady long enough", () => {

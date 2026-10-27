@@ -69,6 +69,55 @@ export const GESTURE_MAP_STORAGE_KEY = "etherphone.gesture-map";
 export const MODE_STORAGE_KEY = "etherphone.mode";
 export const MONO_STYLE_STORAGE_KEY = "etherphone.mono-style";
 
+/**
+ * The gesture menu.
+ *
+ * Opening it is a deliberate pause — nothing sounds while a setting is being
+ * chosen — so both the gesture that opens it and the dwell that commits a choice
+ * are timed generously. All four are the dials to turn if the menu feels wrong
+ * in the hand.
+ */
+export const CONTROL = {
+  /** How long both hands must be closed before the menu opens (ms). */
+  engageHoldMs: 600,
+  /**
+   * How far the cursor must travel before the menu starts responding to it, in
+   * canvas pixels.
+   *
+   * The menu opens with the cursor wherever the closed hand already is, which
+   * may be sitting over an option. Without this, the dwell would start before
+   * the player had read the menu, so nothing is selected until they move.
+   */
+  moveThreshold: 80,
+  /** How long the cursor must rest on an option before it commits (ms). */
+  dwellMs: 900,
+  /**
+   * How long one option takes to fly out of the anchor (ms).
+   *
+   * Short enough to feel like a flick rather than a transition. The whole menu
+   * is out well inside `dwellMs`, so the fan-out can never eat into the time
+   * the player has to choose.
+   */
+  fanOutMs: 340,
+  /** Delay between consecutive options, so they come out as a wave (ms). */
+  fanStaggerMs: 70,
+  /**
+   * Back-easing constant for the fan-out.
+   *
+   * The classic overshoot value: each option carries about a tenth of the way
+   * past its resting spot and settles back onto it.
+   */
+  fanOvershoot: 1.7,
+  /** How long the menu stays open with the cursor off every option (ms). */
+  idleTimeoutMs: 5000,
+  /** Distance from the menu's centre to an option, in canvas pixels. */
+  radius: 190,
+  /** Inside this, the cursor selects nothing, so the centre is a neutral spot. */
+  deadZone: 70,
+  /** Radius of an option's circle, in canvas pixels. */
+  optionRadius: 54,
+} as const;
+
 /** Synth voicing and filter response. */
 export const AUDIO = {
   /** Lowpass cutoff with a perfectly centred hand. */

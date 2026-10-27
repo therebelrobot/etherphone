@@ -8,6 +8,7 @@
 import { TILT_MAX_TRAVEL, VOLUME_BOTTOM_Y, VOLUME_TOP_Y } from "../config/constants";
 import { shapeFromFingers } from "../music/gesture-map";
 import type {
+  CanvasPoint,
   ChordMode,
   ChordNumeral,
   FingerName,
@@ -168,4 +169,32 @@ export function getRightHandQualityIndex(landmarks: Hand): number {
   const pinky = isFingerExtended(landmarks, "pinky");
 
   return [index, middle, ring, pinky].filter(Boolean).length;
+}
+
+/**
+ * Whether the hand is closed into a fist.
+ *
+ * Judged on the four long fingers only. The thumb reads from the side and is the
+ * noisiest landmark, and a fist is a fist whether or not the thumb is tucked.
+ *
+ * Both hands closed is the gesture that opens the menu. It is safe to use
+ * because it is already a silent shape in both modes — a closed chord hand
+ * chooses no chord and a closed voicing hand sounds nothing — so the menu cannot
+ * be opened at the cost of a note.
+ */
+export function isHandClosed(landmarks: Hand): boolean {
+  return getRightHandQualityIndex(landmarks) === 0;
+}
+
+/**
+ * The centre of the palm, used as the menu cursor.
+ *
+ * Midway between the wrist and the middle knuckle, which is steadier than either
+ * end of the hand on its own.
+ */
+export function getHandCenter(landmarks: Hand): CanvasPoint {
+  const wrist = landmarks[WRIST];
+  const middleMcp = landmarks[MIDDLE_MCP];
+
+  return { x: (wrist.x + middleMcp.x) / 2, y: (wrist.y + middleMcp.y) / 2 };
 }

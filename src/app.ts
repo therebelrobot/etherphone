@@ -26,6 +26,7 @@ import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
 import type {
+  CanvasPoint,
   ChordNumeral,
   ChordState,
   GestureMap,
@@ -40,19 +41,24 @@ import type { AppElements } from "./ui/dom";
 import { GestureGuide } from "./ui/gesture-guide";
 import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
+import { MenuController, isModeSwitch, menuOptionsFor } from "./ui/menu-controller";
+import { drawRadialMenu } from "./ui/radial-menu";
+import type { MenuOption } from "./ui/radial-menu";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
 import { startCamera } from "./vision/camera";
 import {
   classifyChord,
+  getHandCenter,
   getHandHeight,
   getHandHorizontalTilt,
   getRightHandQualityIndex,
   getVolumeFromHeight,
+  isHandClosed,
   isThumbExtended,
 } from "./vision/gestures";
 import { createHandLandmarker } from "./vision/hand-tracking";
-import { drawFrame } from "./vision/overlay";
+import { drawFrame, landmarkToCanvas } from "./vision/overlay";
 import { drawEnergy } from "./visuals/energy";
 
 /** The key name carried on the selected option's `data-note` attribute. */
@@ -106,6 +112,9 @@ export class GestureSynthApp {
   private gestureMap: GestureMap;
   private mode: InstrumentMode;
   private monoStyle: MonoStyle;
+
+  /** Whether the gesture menu owns the frame. */
+  private readonly menu = new MenuController();
 
   constructor() {
     this.els = getAppElements();
@@ -403,6 +412,10 @@ export class GestureSynthApp {
   private updateFrame(now: number): void {
     const { Left, Right } = this.hands;
 
+    // The menu takes the whole frame when it is up: opening it is a deliberate
+    // pause, so nothing plays underneath it.
+    if (this.updateControlMenu(now, Left, Right)) return;
+
     // Expression follows the right hand in both modes: it is the "how it
     // sounds" hand, whether the left hand is playing chords or a melody.
     const volume = Right ? getVolumeFromHeight(Right) : 0;
@@ -480,6 +493,95 @@ export class GestureSynthApp {
     this.hud.setQuality(this.monoStyleLabel, false);
     // One ribbon line, coloured by the degree the note sits on.
     drawEnergy(this.els.ctx, volume, 1, tilt, monoNumeral(reading));
+  }
+
+  /**
+   * Runs the gesture menu, opening it when the engage gesture is held.
+   *
+   * @returns True when the menu owns the frame, which is what keeps the
+   *   instrument silent while a setting is being chosen.
+   */
+  private updateControlMenu(now: number, left: Hand | null, right: Hand | null): boolean {
+    const bothClosed = left !== null && right !== null && isHandClosed(left) && isHandClosed(right);
+
+    const update = this.menu.update(
+      {
+        options: this.menuOptions(),
+        bothClosed,
+        cursor: right ? this.cursorFor(right) : null,
+        canvasWidth: this.els.canvas.width,
+        canvasHeight: this.els.canvas.height,
+      },
+      now,
+    );
+
+    if (update.justOpened) {
+      // The menu is a deliberate pause, so nothing sounds underneath it.
+      this.synth.stop();
+      this.stabilizer.reset();
+      this.mono.reset();
+    }
+
+    if (update.committed !== null) {
+      this.applyMenuChoice(update.committed);
+      return true;
+    }
+
+    if (!update.isOpen) return false;
+
+    this.hud.setNote(update.hoveredId === null ? "MENU" : this.labelFor(update.hoveredId));
+    this.hud.setQuality("Control", false);
+    drawRadialMenu(this.els.ctx, update);
+
+    return true;
+  }
+
+  /** The label of a menu option, for the readout. */
+  private labelFor(id: string): string {
+    return this.menuOptions().find((option) => option.id === id)?.label ?? id;
+  }
+
+  /**
+   * The options the menu offers: whichever picker currently occupies the shared
+   * slot, plus a switch to the other mode.
+   */
+  private menuOptions(): readonly MenuOption[] {
+    const select = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
+
+    const vocabulary = Array.from(select.options).map((option) => ({
+      id: option.value,
+      label: option.textContent ?? option.value,
+    }));
+
+    return menuOptionsFor(this.mode, vocabulary);
+  }
+
+  /** Applies a committed menu choice to whatever it came from. */
+  private applyMenuChoice(id: string): void {
+    if (isModeSwitch(id)) {
+      this.setMode(id);
+      return;
+    }
+
+    if (this.mode === "mono") {
+      this.setMonoStyle(id as MonoStyle);
+    } else {
+      this.setGestureMap(id);
+    }
+  }
+
+  /** The right hand's palm centre, in canvas coordinates, for the menu cursor. */
+  private cursorFor(hand: Hand): CanvasPoint | null {
+    const { videoWidth, videoHeight } = this.els.video;
+    if (!videoWidth || !videoHeight) return null;
+
+    return landmarkToCanvas(
+      getHandCenter(hand),
+      videoWidth,
+      videoHeight,
+      this.els.canvas.width,
+      this.els.canvas.height,
+    );
   }
 
   /** Sends the current intent to the synth, or silences it. */
