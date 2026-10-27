@@ -81,6 +81,7 @@ will load the app but cannot reach the camera.
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
 - Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
+- A **gesture menu**: close both hands to open it, point with the right hand, dwell to choose
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -88,7 +89,6 @@ will load the app but cannot reach the camera.
 
 **Next, in the order the RFCs argue for**
 
-- Change key, instrument, and transport by gesture, with dwell instead of click
 - Build your own gesture map, by gesture rather than by mouse
 - Record musical intent and loop it against a real tempo
 - Capture the microphone and loop voice as a layer
@@ -165,10 +165,10 @@ src/
                            and the quantised, glide, and harp readings of it.
     gesture-map.ts         The gesture vocabulary as data: hand shapes as bitmasks,
                            and the Classic, Triad, and Pentatonic presets.
+    stabilizer.ts          Holding a reading before committing to it. The chord
+                           path and the gesture menu both use DwellStabilizer.
     voicings.ts            The four right-hand voicings per mode, each with a label
                            and a note selector, so readout and audio cannot drift.
-    stabilizer.ts          Temporal smoothing: holds a chord before committing it,
-                           and rides out brief dropouts.
 
   audio/
     synth-engine.ts        Voice -> waveshaper -> lowpass filter -> master gain.
@@ -197,6 +197,8 @@ src/
     hud.ts                 Chord, quality, and filter readouts.
     volume-meter.ts        The eight-segment volume meter.
     gesture-guide.ts       The scale-degree cheat sheet, rendered from the active map.
+    radial-menu.ts         The gesture menu's geometry, hit-testing, and drawing.
+    menu-controller.ts     When the menu opens, what it highlights, and what commits.
     help-modal.ts          The "how to play" modal.
     start-overlay.ts       The click-to-enable-audio gate.
 ```
@@ -289,6 +291,39 @@ oscillators whenever the frequencies change, which is right for a chord and wron
 a glide, so `Voice` gained an optional `retune()` that slides a sounding note instead.
 A voice that cannot retune falls back to `play`, so a glide on such an instrument
 steps rather than going silent.
+
+#### The gesture menu
+
+Every setting used to be a `<select>`, which meant dropping your hands and reaching for
+a mouse mid-performance — and each feature added since has added another one. Close
+**both hands** for a moment and a radial menu opens over the instrument instead:
+
+- **Both hands closed** opens it. That gesture is safe precisely because it is already
+  a silent shape in either mode — a closed chord hand chooses no chord and a closed
+  voicing hand sounds nothing — so the menu can never be opened at the cost of a note.
+- **Point with the right hand**; the option you are pointing at is highlighted. The
+  selection is by _direction_, not proximity, so a coarse hand does not have to land on
+  the option, and a dead zone in the middle means nothing is selected unless the hand
+  is deliberately pushed outwards.
+- **Dwell to commit.** A ring fills around the option; when it closes, the choice is
+  applied and the menu shuts. Releasing the engage gesture before holding it again is
+  required, so a player still holding their fists shut does not get a menu reopening
+  underneath them.
+- **Idling times it out** after a few seconds with the cursor off every option.
+
+The menu carries whichever picker currently occupies the shared slot in the control
+stack — the gesture maps in Chords mode, the mono styles in Mono mode — because it
+reads its options from that picker rather than from a list of its own. Adding a control
+means adding it to a picker, not teaching the menu about it.
+
+Opening the menu silences the instrument: it is a deliberate pause, not an overlay you
+play through.
+
+The hold-before-commit rule is shared. `DwellStabilizer` is the general shape — wait for
+a value to be steady, then act on it — and both the chord path and the menu use it.
+`ChordStabilizer` is that plus the tolerance for MediaPipe dropping a hand for a frame.
+This is the primitive the looper's quantised arm step wants too, which is why it was
+worth extracting here rather than inside the looper.
 
 ### Instruments
 

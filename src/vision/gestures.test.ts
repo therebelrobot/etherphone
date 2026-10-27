@@ -4,10 +4,12 @@ import type { ChordNumeral, FingerName, GestureMap, Hand, HandShape } from "../t
 import {
   classifyChord,
   getChordQuality,
+  getHandCenter,
   getHandHorizontalTilt,
   getRightHandQualityIndex,
   getVolumeFromHeight,
   isFingerExtended,
+  isHandClosed,
   isThumbExtended,
   readHandShape,
 } from "./gestures";
@@ -299,5 +301,33 @@ describe("getRightHandQualityIndex", () => {
     const hand = makeHand();
     setThumb(hand, "Right", true);
     expect(getRightHandQualityIndex(hand)).toBe(0);
+  });
+});
+
+describe("isHandClosed", () => {
+  it("is true for a fist", () => {
+    expect(isHandClosed(makeHand())).toBe(true);
+  });
+
+  it("is false as soon as one long finger is up", () => {
+    const hand = makeHand();
+    setFinger(hand, "index", true);
+    expect(isHandClosed(hand)).toBe(false);
+  });
+
+  it("ignores the thumb, which is the noisiest landmark", () => {
+    const hand = makeHand();
+    setThumb(hand, "Right", true);
+    expect(isHandClosed(hand)).toBe(true);
+  });
+});
+
+describe("getHandCenter", () => {
+  it("sits midway between the wrist and the middle knuckle", () => {
+    const hand = makeHand();
+    setPoint(hand, WRIST, 0.4, 0.6);
+    setPoint(hand, MIDDLE_MCP, 0.6, 0.2);
+
+    expect(getHandCenter(hand)).toEqual({ x: 0.5, y: 0.4 });
   });
 });

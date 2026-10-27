@@ -129,3 +129,19 @@ export interface CoverRect {
   readonly sWidth: number;
   readonly sHeight: number;
 }
+
+/** A point in canvas pixels. */
+export interface CanvasPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** One option of the gesture menu, placed on the canvas. */
+export interface RadialSlot {
+  readonly id: string;
+  readonly label: string;
+  /** Direction from the menu's centre, in radians. */
+  readonly angle: number;
+  readonly x: number;
+  readonly y: number;
+}
