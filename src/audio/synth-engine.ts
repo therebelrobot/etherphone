@@ -33,14 +33,19 @@ export class SynthEngine {
   /**
    * Creates the audio graph on first call. Safe to call repeatedly, and safe to
    * call from a click handler.
+   *
+   * @param existing - A context to join instead of creating one. Layers must
+   *   share the instrument's context: two contexts would mean two clocks, and
+   *   a loop that drifts against the hand it was played with.
    */
-  ensureContext(): void {
+  ensureContext(existing?: AudioContext): void {
     if (this.ctx) return;
 
     const AudioContextCtor = window.AudioContext ?? window.webkitAudioContext;
-    if (!AudioContextCtor) return;
+    const ctx = existing ?? (AudioContextCtor ? new AudioContextCtor() : null);
+    if (!ctx) return;
 
-    this.ctx = new AudioContextCtor();
+    this.ctx = ctx;
 
     this.waveShaper = this.ctx.createWaveShaper();
     this.waveShaper.curve = null;

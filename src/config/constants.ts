@@ -137,6 +137,40 @@ export const CONTROL = {
   optionRadius: 54,
 } as const;
 
+/**
+ * The looper's clock and grid.
+ *
+ * The transport is the shared time source the umbrella RFC argues for: the
+ * looper uses it now, and voice looping (#9) and the percussion sequencer (#10)
+ * are meant to read the same tempo and the same bar lines rather than each
+ * keeping a clock of its own. Everything time-based is expressed in *beats*;
+ * the tempo is only how fast a beat goes by.
+ */
+export const TRANSPORT = {
+  /** Beats in a bar. Loop length, arming, and quantisation are all counted in these. */
+  beatsPerBar: 4,
+  /** Tempo used before the player has chosen one (BPM). */
+  defaultBpm: 100,
+  /** Loop length used before the player has chosen one, in bars. */
+  defaultBars: 4,
+  /** Loop lengths the picker offers, in bars. */
+  barChoices: [1, 2, 4, 8],
+  /** Tempos the picker offers (BPM). */
+  tempoChoices: [60, 70, 80, 90, 100, 110, 120, 132, 140, 160],
+  /**
+   * The grid a recorded onset snaps to, in beats.
+   *
+   * A quarter of a beat is a sixteenth note in 4/4 — fine enough that a
+   * deliberate performance is unharmed, coarse enough that frame jitter in the
+   * onset does not smear the loop.
+   */
+  quantiseBeats: 0.25,
+} as const;
+
+/** Where the loop's tempo and length are remembered between visits. */
+export const TEMPO_STORAGE_KEY = "etherphone.tempo";
+export const BARS_STORAGE_KEY = "etherphone.bars";
+
 /** Synth voicing and filter response. */
 export const AUDIO = {
   /** Lowpass cutoff with a perfectly centred hand. */

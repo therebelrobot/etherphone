@@ -461,6 +461,8 @@ describe("menu topic and mode ids", () => {
     expect(isMenuTopic("vocabulary")).toBe(true);
     expect(isMenuTopic("key")).toBe(true);
     expect(isMenuTopic("instrument")).toBe(true);
+    expect(isMenuTopic("layers")).toBe(true);
+    expect(isMenuTopic("transport")).toBe(true);
     expect(isMenuTopic("settings")).toBe(true);
     expect(isMenuTopic("classic")).toBe(false);
     expect(isMenuTopic("chord")).toBe(false);
@@ -472,11 +474,13 @@ describe("menu topic and mode ids", () => {
     expect(isModeSwitch("triad")).toBe(false);
   });
 
-  it("offers four menus", () => {
+  it("offers the vocabulary, key, instrument, layers, transport, and settings menus", () => {
     expect(MENU_TOPICS.map((topic) => topic.id)).toEqual([
       "vocabulary",
       "key",
       "instrument",
+      "layers",
+      "transport",
       "settings",
     ]);
   });

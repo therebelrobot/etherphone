@@ -36,14 +36,18 @@ played live, looped, layered, and recorded as a file worth posting.
 
 ## Where it is now
 
-Today Etherphone is a **chorder**. A chord exists while a hand holds a shape and
-stops when the hand drops. The picker has oscillators, wavetables, and samplers, and
-you can load your own. That is a real instrument, but it is not yet a performance:
-there is no time, no memory, no second voice, no rhythm, and no way to reach a setting
-without the mouse.
+Etherphone started as a **chorder**: a chord exists while a hand holds a shape and
+stops when the hand drops. It is now becoming a performance machine. It has a second
+voice (**Mono** — melody, lead, bassline), a real **clock**, and a **looper** that
+records what the hands meant and plays it back as layers — a chord bed with a melody
+over it — that can be dropped out and brought back mid-performance. Chords, Mono, and
+every setting are reachable by gesture, without the mouse.
+
+What is still missing is rhythm, the microphone, and a way to record a finished
+performance to a file.
 
 The gap is mapped, not guessed. The open RFCs describe six changes to the
-instrument, plus one to what happens after it is played:
+instrument, plus two to what happens after it is played:
 
 ```
 Wave 1  Control plane   hands drive the interface          RFCs #4, #8
@@ -56,6 +60,7 @@ Wave 3  Layers          voice, tuning, percussion          RFCs #9, #11, #10
 | --------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **1 — Control plane** | Gesture-driven menu navigation (#4) and remappable gesture maps (#8)                                   | Every later feature adds a control. If the only way to reach one is a `<select>`, the stop-and-click problem gets worse with each wave.                       |
 | **2 — The spine**     | A monophonic voice for melody, lead, and bass (#7), and the recorder/looper with a real transport (#2) | The looper owns tempo and time. The mono voice forces the app to stop assuming that "musical intent" means "a chord". Everything after this is built on both. |
+|                       | _Both landed: Mono (#7) and the looper with its shared clock and layers (#2)._                         |                                                                                                                                                               |
 | **3 — Layers**        | Microphone looping (#9), tuned voice loops (#11), and percussion (#10)                                 | These are layers on the spine: same clock, same loop windows, same gesture control. Designing them against three separate clocks would be a mistake.          |
 | **Capture**           | Render a performance — audio, and ideally the video overlay — to a file ready to post                  | The thing that makes it "perform into recording". It taps the master bus, so the loops, voice, and drums of the waves above arrive in the same mix for free.  |
 
@@ -81,7 +86,8 @@ will load the app but cannot reach the camera.
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
 - Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
-- A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose. It reaches the key and the instrument too, as a list
+- A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose. It reaches the key, the instrument, the transport, and the layers too
+- A **looper**: record a chord bed, switch to Mono, record a melody over it — and drop either layer out and back in without stopping
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -90,7 +96,6 @@ will load the app but cannot reach the camera.
 **Next, in the order the RFCs argue for**
 
 - Build your own gesture map, by gesture rather than by mouse
-- Record musical intent and loop it against a real tempo
 - Capture the microphone and loop voice as a layer
 - Tune a captured voice loop to the key without changing its timing
 - Percussion: live hits, a step grid, and possibly a small pattern notation
@@ -163,6 +168,10 @@ src/
     harmony.ts             Roman numeral + tonic -> note names and frequencies.
     mono.ts                The mono voice's pitch mapping: height -> scale degree,
                            and the quantised, glide, and harp readings of it.
+    take.ts                A recorded performance, and how its intent resolves back
+                           into frequencies against the key in play.
+    recorder.ts            Capturing intent into a take: changes only, on a grid.
+    looper.ts              The layers: arming, recording, phase, playback, mute.
     gesture-map.ts         The gesture vocabulary as data: hand shapes as bitmasks,
                            and the Classic, Triad, and Pentatonic presets.
     stabilizer.ts          Holding a reading before committing to it. The chord
@@ -171,9 +180,13 @@ src/
                            and a note selector, so readout and audio cannot drift.
 
   audio/
+    transport.ts           The shared clock: tempo, bar lines, and the loop's length,
+                           measured in beats against the AudioContext's clock. Pure,
+                           so the timing maths is testable without a browser.
     synth-engine.ts        Voice -> waveshaper -> lowpass filter -> master gain.
                            Owns the shared chain and the AudioContext; the notes
-                           themselves belong to whichever voice is loaded.
+                           themselves belong to whichever voice is loaded. A layered
+                           loop is a second engine joined to the same context.
     voice.ts               The Voice interface, the instrument registry, and the
                            frequency key voices use to skip unchanged frames.
     wavetable.ts           Harmonic spectra: the bundled tables and the analysis
@@ -191,6 +204,8 @@ src/
 
   visuals/
     energy.ts              The jittering "energy ribbon" behind the chord readout.
+    loop-tracks.ts         The loop's layers as lanes along the bar, with a playhead:
+                           what is on the loop, and which parts are dropped out.
 
   ui/
     dom.ts                 The full list of ids and classes the app expects.
@@ -205,11 +220,13 @@ src/
     start-overlay.ts       The click-to-enable-audio gate.
 ```
 
-The RFCs each name the modules they would add — `src/audio/transport.ts` for the
-shared clock, `src/music/recorder.ts` and `looper.ts` for takes, a mic voice in
-`src/audio/voices/`, and so on. The point of the current layout is that those are
-additions, not rewrites: the `Voice` seam already makes a sampler a registry entry,
-and it will make a mic loop one too.
+The RFCs each name the modules they would add, and some of them are here already —
+`src/audio/transport.ts` for the shared clock, `src/music/recorder.ts`, `take.ts` and
+`looper.ts` for the layers. Others are still to come: a mic voice in
+`src/audio/voices/`, and drum kits. The point of the layout is that those are
+additions, not rewrites: the `Voice` seam already made a wavetable and a sampler
+registry entries, the `Transport` is now the one clock percussion and voice looping
+will read, and the looper's tracks were built as layers so a mic loop is one more.
 
 ### How the gestures map to music
 
@@ -396,8 +413,40 @@ operating system's dialog and cannot be anything else.
 The hold-before-commit rule is shared. `DwellStabilizer` is the general shape — wait for
 a value to be steady, then act on it — and both the chord path and the menu use it.
 `ChordStabilizer` is that plus the tolerance for MediaPipe dropping a hand for a frame.
-This is the primitive the looper's quantised arm step wants too, which is why it was
-worth extracting here rather than inside the looper.
+The RFC expected the looper's quantised arm to reuse it; in the end that arm quantises
+to the transport's bar lines instead, which is the stronger guarantee — a loop starts on
+the grid, not merely after a pause.
+
+#### The looper
+
+Closing both hands opens the menu, and **Transport** holds the looper: **Record**,
+**Play**, **Stop**, **Clear**. Recording arms the looper and begins on the next bar
+line, so the loop lands in time rather than wherever your hands happened to be. Play a
+phrase; after the chosen number of bars it starts looping.
+
+What it records is **intent**, not audio — the chord that was held, or the degree the
+melody reached, stamped with where in the bar it began and how loud it was. That is a
+handful of numbers rather than a waveform, and it replays through the same harmony
+functions the live instrument uses, so a take sounds like the take. It also means
+changing the key **transposes the loop**, in step with everything else.
+
+Each mode records into its own **layer**: record in Chords, switch to Mono, record
+again, and the two play together. The **Layers** menu toggles each one in and out
+(and the buttons under the transport do the same by mouse) — which is the move that
+makes a looper something you can _perform_ with rather than just listen to.
+
+![Two layers looping: a chord bed and a melody](docs/screenshots/loop-tracks/02-two-layers.png)
+
+The lanes are the loop: one per layer, its notes as blocks along the bar, and a
+playhead sweeping across. A dropped-out layer goes faded and struck through, so the
+arrangement reads at a glance.
+
+![A layer dropped out, drawn struck through](docs/screenshots/loop-tracks/03-layer-muted.png)
+
+Under it all is `Transport` (`src/audio/transport.ts`): tempo and bar lines, counted in
+beats against the `AudioContext`'s own clock rather than the frame loop, so the grid
+does not drift when inference is heavy. The looper owns no clock of its own, and
+neither will the percussion sequencer — that is the point of it being its own module.
 
 ### Instruments
 

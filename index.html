@@ -55,6 +55,17 @@
       <input id="sampleFile" type="file" accept="audio/*" hidden />
       <button id="guideToggle">Open Guide</button>
       <div id="gestureGuide" class="hidden"></div>
+
+      <select id="tempoSelect" title="Loop tempo, in beats per minute"></select>
+      <select id="barsSelect" title="Loop length, in bars"></select>
+      <div id="transportControls">
+        <button id="recordButton" title="Record the next bar line onwards">● Rec</button>
+        <button id="playButton" title="Play the recorded loop">▶ Play</button>
+        <button id="stopButton" title="Stop the loop, keeping it">■ Stop</button>
+        <button id="clearButton" title="Throw the loop away">✕ Clear</button>
+      </div>
+      <div id="transportDisplay">Idle</div>
+      <div id="layerControls"></div>
       <div id="qualityDisplay">--</div>
       <div id="distortionDisplay">Filter: 0%</div>
 
@@ -121,6 +132,25 @@
             <i>Glide</i> slides continuously between notes.<br />
             <i>Harp</i> plucks a fresh note as your hand moves from one to the next, so a sweep
             across the frame plays a run.
+          </p>
+
+          <h3>The looper</h3>
+          <p>
+            <b>Record</b> arms the looper, which begins on the next bar line — so the loop lands in
+            time rather than wherever your hands happened to be. Play a phrase; after the chosen
+            number of bars it starts looping, and you can play over it.
+          </p>
+          <p>
+            It records what your hands <i>meant</i> — the chord or note, not the sound — so changing
+            the key transposes the loop along with everything else. <b>Stop</b> keeps the loop to
+            restart it; <b>Clear</b> throws it away. All four are also in the gesture menu under
+            <b>Transport</b>, so the loop can be driven without the mouse.
+          </p>
+          <p>
+            Each mode records its own <b>layer</b>: record your chords, switch to Mono, and record a
+            melody over them — both keep playing. The <b>Layers</b> menu (and the buttons under the
+            transport) drops a layer out and brings it back without stopping, so you can build the
+            arrangement as you play.
           </p>
 
           <h3>Right Hand</h3>

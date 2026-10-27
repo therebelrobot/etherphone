@@ -25,6 +25,14 @@ export interface AppElements {
   readonly sampleFile: HTMLInputElement;
   readonly guideToggle: HTMLButtonElement;
   readonly gestureGuide: HTMLElement;
+  readonly tempoSelect: HTMLSelectElement;
+  readonly barsSelect: HTMLSelectElement;
+  readonly recordButton: HTMLButtonElement;
+  readonly playButton: HTMLButtonElement;
+  readonly stopButton: HTMLButtonElement;
+  readonly clearButton: HTMLButtonElement;
+  readonly transportDisplay: HTMLElement;
+  readonly layerControls: HTMLElement;
   readonly helpButton: HTMLButtonElement;
   readonly helpModal: HTMLElement;
   readonly closeHelp: HTMLButtonElement;
@@ -69,6 +77,14 @@ export function getAppElements(): AppElements {
     sampleFile: requireElement<HTMLInputElement>("#sampleFile"),
     guideToggle: requireElement<HTMLButtonElement>("#guideToggle"),
     gestureGuide: requireElement("#gestureGuide"),
+    tempoSelect: requireElement<HTMLSelectElement>("#tempoSelect"),
+    barsSelect: requireElement<HTMLSelectElement>("#barsSelect"),
+    recordButton: requireElement<HTMLButtonElement>("#recordButton"),
+    playButton: requireElement<HTMLButtonElement>("#playButton"),
+    stopButton: requireElement<HTMLButtonElement>("#stopButton"),
+    clearButton: requireElement<HTMLButtonElement>("#clearButton"),
+    transportDisplay: requireElement("#transportDisplay"),
+    layerControls: requireElement("#layerControls"),
     helpButton: requireElement<HTMLButtonElement>("#helpButton"),
     helpModal: requireElement("#helpModal"),
     closeHelp: requireElement<HTMLButtonElement>("#closeHelp"),

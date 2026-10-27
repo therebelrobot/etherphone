@@ -10,21 +10,29 @@
  */
 import type { HandLandmarker, HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { SynthEngine } from "./audio/synth-engine";
+import { Transport } from "./audio/transport";
 import { defineUserSample, defineUserWavetable } from "./audio/user-voices";
 import { listVoices, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
 import type { VoiceDefinition, VoiceKind } from "./audio/voice";
 import { DEFAULT_VOICE_ID } from "./audio/voices";
 import {
+  BARS_STORAGE_KEY,
   GESTURE_MAP_STORAGE_KEY,
   MODE_STORAGE_KEY,
   MONO_STYLE_STORAGE_KEY,
   PROJECT_NAME,
   SINGLE_HANDED_STORAGE_KEY,
+  TEMPO_STORAGE_KEY,
+  TRANSPORT,
 } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
+import { describeLooper, Looper, trackLabel } from "./music/looper";
+import type { LoopTrack, TrackId } from "./music/looper";
 import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
+import { resolveTakeEvent } from "./music/take";
+import type { ResolvedEvent } from "./music/take";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
 import type {
   CanvasPoint,
@@ -62,9 +70,26 @@ import {
 import { createHandLandmarker } from "./vision/hand-tracking";
 import { drawFrame, landmarkToCanvas } from "./vision/overlay";
 import { drawEnergy } from "./visuals/energy";
+import { drawLoopTracks, trackSegments } from "./visuals/loop-tracks";
+import type { TrackLane } from "./visuals/loop-tracks";
 
 /** The id of the one-handed toggle, which is not a mode or a value. */
 const ONE_HANDED_ID = "one-handed";
+
+/**
+ * A number remembered between visits, kept only if it is still one the picker
+ * offers — so a value the markup no longer lists cannot outlive it.
+ */
+function readStoredChoice(key: string, fallback: number, choices: readonly number[]): number {
+  try {
+    const stored = Number(window.localStorage.getItem(key));
+    if (choices.includes(stored)) return stored;
+  } catch {
+    // Storage can be unavailable; the default stands.
+  }
+
+  return fallback;
+}
 
 /** The key name carried on the selected option's `data-note` attribute. */
 function readKeyName(select: HTMLSelectElement): KeyName {
@@ -101,6 +126,21 @@ function restoreSelect(select: HTMLSelectElement, storageKey: string): string {
 export class GestureSynthApp {
   private readonly els: AppElements;
   private readonly synth: SynthEngine;
+
+  /**
+   * One channel strip per track, on the instrument's context.
+   *
+   * A layer is its own engine, so a loop and the hands — and several loops — can
+   * sound at once without fighting over one voice. Each is created the same way
+   * the live engine is, so an instrument is whatever the picker says for all of
+   * them, and each can be dropped out and brought back independently.
+   */
+  private readonly layers = new Map<TrackId, SynthEngine>();
+
+  /** The shared clock: tempo and bar lines, for the looper now and for percussion later. */
+  private readonly transport: Transport;
+  private readonly looper: Looper;
+
   private readonly stabilizer = new ChordStabilizer();
   private readonly mono = new MonoReader();
   private readonly hud: Hud;
@@ -126,6 +166,12 @@ export class GestureSynthApp {
 
     this.synth = new SynthEngine();
 
+    this.transport = new Transport({
+      bpm: readStoredChoice(TEMPO_STORAGE_KEY, TRANSPORT.defaultBpm, TRANSPORT.tempoChoices),
+      loopBars: readStoredChoice(BARS_STORAGE_KEY, TRANSPORT.defaultBars, TRANSPORT.barChoices),
+    });
+    this.looper = new Looper(this.transport);
+
     this.hud = new Hud(
       this.els.chordDisplay,
       this.els.qualityDisplay,
@@ -149,6 +195,7 @@ export class GestureSynthApp {
     this.singleHanded = this.readStoredSingleHanded();
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
+    this.renderTransportChoices();
     this.gestureMap = getGestureMap(
       restoreSelect(this.els.gestureMapSelect, GESTURE_MAP_STORAGE_KEY),
     );
@@ -166,7 +213,7 @@ export class GestureSynthApp {
     this.wireOverlays();
     this.bindControls();
     this.refreshHelp();
-    this.synth.setInstrument(this.els.instrumentSelect.value);
+    this.setInstrument(this.els.instrumentSelect.value);
 
     await startCamera(this.els.video);
     resizeCanvasToWindow(this.els.canvas);
@@ -178,7 +225,48 @@ export class GestureSynthApp {
 
   /** Constructs the components that own their own event handling. */
   private wireOverlays(): void {
-    new StartOverlay(this.els.startOverlay, this.els.canvas, () => this.synth.ensureContext());
+    new StartOverlay(this.els.startOverlay, this.els.canvas, () => this.startAudio());
+  }
+
+  /**
+   * Opens the audio graph, on a click.
+   *
+   * Every layer joins the instrument's context rather than making its own, so
+   * they share one clock — two contexts would mean two clocks, and a loop that
+   * drifts against the hand it was played with.
+   */
+  private startAudio(): void {
+    this.synth.ensureContext();
+
+    for (const layer of this.layers.values()) {
+      layer.ensureContext(this.synth.context ?? undefined);
+      layer.setInstrument(this.els.instrumentSelect.value);
+    }
+  }
+
+  /**
+   * The channel strip for a track, built on first use.
+   *
+   * Layers are made lazily so a player who never records never pays for one, and
+   * so a new track — a chord bed, a lead, and later a kit — needs no wiring of
+   * its own.
+   */
+  private layerFor(id: TrackId): SynthEngine {
+    const existing = this.layers.get(id);
+    if (existing) return existing;
+
+    const layer = new SynthEngine();
+    layer.ensureContext(this.synth.context ?? undefined);
+    layer.setInstrument(this.els.instrumentSelect.value);
+    layer.setVolume(0);
+    this.layers.set(id, layer);
+
+    return layer;
+  }
+
+  /** The instrument's clock, or zero before the audio graph exists. */
+  private audioTime(): number {
+    return this.synth.context?.currentTime ?? 0;
   }
 
   /** Wires the key, gesture-map, instrument, and instrument-loading controls. */
@@ -202,6 +290,19 @@ export class GestureSynthApp {
     this.els.instrumentSelect.addEventListener("change", () => {
       this.setInstrument(this.els.instrumentSelect.value);
     });
+
+    this.els.tempoSelect.addEventListener("change", () => {
+      this.setTempo(Number(this.els.tempoSelect.value));
+    });
+
+    this.els.barsSelect.addEventListener("change", () => {
+      this.setBars(Number(this.els.barsSelect.value));
+    });
+
+    this.els.recordButton.addEventListener("click", () => this.recordLoop());
+    this.els.playButton.addEventListener("click", () => this.playLoop());
+    this.els.stopButton.addEventListener("click", () => this.stopLoop());
+    this.els.clearButton.addEventListener("click", () => this.clearLoop());
 
     // The file inputs are hidden; the buttons are what the player sees, and
     // clicking one opens the picker for its input.
@@ -290,10 +391,106 @@ export class GestureSynthApp {
     this.refreshHelp();
   }
 
-  /** Switches instrument, by the picker's id. */
+  /**
+   * Switches instrument, by the picker's id.
+   *
+   * Both layers follow the picker: a loop is the same instrument it was played
+   * on, and a player who changes instrument expects to hear the change on the
+   * next note either way.
+   */
   private setInstrument(id: string): void {
     this.els.instrumentSelect.value = id;
     this.synth.setInstrument(id);
+
+    for (const layer of this.layers.values()) {
+      layer.setInstrument(id);
+    }
+  }
+
+  /** Changes tempo, live and without moving the loop off its place in the bar. */
+  private setTempo(bpm: number): void {
+    this.transport.setTempo(bpm, this.audioTime());
+    this.els.tempoSelect.value = String(bpm);
+    remember(TEMPO_STORAGE_KEY, String(bpm));
+  }
+
+  /**
+   * Changes the loop's length.
+   *
+   * A take recorded against one grid does not fit another, so playback stops
+   * rather than continuing a loop of the wrong length. The take is kept.
+   */
+  private setBars(bars: number): void {
+    this.transport.setLoopBars(bars);
+    this.els.barsSelect.value = String(bars);
+    remember(BARS_STORAGE_KEY, String(bars));
+
+    if (this.looper.hasTake) this.stopLoop();
+  }
+
+  /**
+   * Arms a recording into the layer the current mode plays.
+   *
+   * Recording in Chords mode fills (or refills) the chord layer, and in Mono
+   * mode the melody layer — so layering a lead over a chord bed is just: record
+   * the chords, switch mode, record the melody. Both keep playing.
+   */
+  private recordLoop(): void {
+    this.looper.record(this.audioTime(), {
+      id: this.mode,
+      label: trackLabel(this.mode),
+      mode: this.mode,
+    });
+  }
+
+  /** Starts every stored layer from the loop's beginning. */
+  private playLoop(): void {
+    this.looper.play(this.audioTime());
+  }
+
+  /** Stops the loop, keeping every layer. */
+  private stopLoop(): void {
+    this.looper.stop();
+
+    for (const layer of this.layers.values()) layer.stop();
+  }
+
+  /** Throws every layer away. */
+  private clearLoop(): void {
+    this.looper.clear();
+
+    for (const layer of this.layers.values()) layer.stop();
+  }
+
+  /**
+   * Silences or restores a layer.
+   *
+   * Muting has to silence the layer *now*, not just stop scheduling it: a
+   * two-bar chord would otherwise keep ringing after the track was dropped out.
+   * Unmuting is the mirror image — the track picks up the note it is already in
+   * the middle of, so it comes back in as though it had never left.
+   */
+  private toggleLayer(id: TrackId): void {
+    this.looper.toggleMute(id);
+
+    const track = this.looper.tracks.find((candidate) => candidate.id === id);
+    const layer = this.layers.get(id);
+    if (!track || !layer) return;
+
+    if (track.muted) {
+      layer.stop();
+      return;
+    }
+
+    this.replayLayer(track);
+  }
+
+  /** Re-primes a layer with whatever it should be sounding right now. */
+  private replayLayer(track: LoopTrack): void {
+    const event = this.looper.currentEvent(track.id, this.audioTime());
+    if (!event) return;
+
+    this.playLoopEvent(track.id, resolveTakeEvent(event, this.tonicFrequency));
   }
 
   /** Reads the remembered one-handed setting. */
@@ -333,6 +530,12 @@ export class GestureSynthApp {
     this.synth.stop();
     this.stabilizer.reset();
     this.mono.reset();
+
+    // A take in progress would be half chord and half melody, so it is dropped.
+    // The layers already recorded keep playing; that is how you record the
+    // melody *over* the chord bed.
+    this.looper.cancelRecording();
+
     this.refreshHelp();
   }
 
@@ -397,6 +600,40 @@ export class GestureSynthApp {
   }
 
   /**
+   * Fills the tempo and loop-length pickers from the configured choices.
+   *
+   * Like the other pickers, this reads a list rather than hardcoding options, so
+   * a tempo or a loop length is added by declaring it once.
+   */
+  private renderTransportChoices(): void {
+    const fill = (
+      select: HTMLSelectElement,
+      values: readonly number[],
+      label: (value: number) => string,
+      selected: number,
+    ): void => {
+      select.replaceChildren(
+        ...values.map((value) => {
+          const option = document.createElement("option");
+          option.value = String(value);
+          option.textContent = label(value);
+          return option;
+        }),
+      );
+
+      select.value = String(selected);
+    };
+
+    fill(this.els.tempoSelect, TRANSPORT.tempoChoices, (bpm) => `${bpm} BPM`, this.transport.tempo);
+    fill(
+      this.els.barsSelect,
+      TRANSPORT.barChoices,
+      (bars) => `${bars} bar${bars === 1 ? "" : "s"}`,
+      this.transport.loopBars,
+    );
+  }
+
+  /**
    * Runs one gesture pass per animation frame.
    *
    * Inference is skipped when the video has not advanced, but the frame is still
@@ -448,9 +685,14 @@ export class GestureSynthApp {
   /** Maps one frame of gestures onto sound, readouts, and animation. */
   private updateFrame(now: number): void {
     const { Left, Right } = this.hands;
+    const ctxTime = this.audioTime();
+
+    // The loop runs under everything, including the menu: changing a setting
+    // mid-performance should not stop the music it is playing over.
+    this.updateLoop(ctxTime);
 
     // The menu takes the whole frame when it is up: opening it is a deliberate
-    // pause, so nothing plays underneath it.
+    // pause, so nothing *played* sounds underneath it.
     if (this.updateControlMenu(now, Left, Right)) return;
 
     // Expression follows the right hand in both modes: it is the "how it
@@ -467,7 +709,7 @@ export class GestureSynthApp {
     }
 
     if (this.mode === "mono") {
-      this.updateMonoFrame(Left, volume, tilt);
+      this.updateMonoFrame(Left, volume, tilt, ctxTime);
       return;
     }
 
@@ -481,6 +723,21 @@ export class GestureSynthApp {
     this.hud.setChord(getChordDisplayName(chord, isMajorMode, this.keyName), chord);
     this.hud.setQuality(getVoicingLabel(isMajorMode, qualityIndex), thumbDown);
 
+    this.looper.capture(
+      state && state.qualityIndex >= 1
+        ? {
+            kind: "chord",
+            numeral: state.chord,
+            isMajorMode: state.isMajorMode,
+            qualityIndex: state.qualityIndex,
+            thumbDown: state.thumbDown,
+          }
+        : null,
+      volume,
+      tilt,
+      ctxTime,
+    );
+
     if (Right) {
       this.updateVoices(state, volume);
     }
@@ -489,16 +746,112 @@ export class GestureSynthApp {
   }
 
   /**
+   * Advances the loop and replays whatever came due this frame.
+   *
+   * The events drive the loop layer exactly as the hands drive the live one:
+   * the same frequencies, from the same harmony functions, into a voice of the
+   * same kind. That is what makes a take sound like the take.
+   */
+  private updateLoop(ctxTime: number): void {
+    for (const hit of this.looper.tick(ctxTime)) {
+      this.playLoopEvent(hit.trackId, resolveTakeEvent(hit.event, this.tonicFrequency));
+    }
+
+    const { state } = this.looper;
+
+    this.els.transportDisplay.textContent = describeLooper(
+      state,
+      this.transport.loopBars,
+      this.looper.hasTake,
+    );
+
+    this.els.recordButton.classList.toggle("active", state === "recording" || state === "armed");
+
+    this.renderLayerControls();
+    drawLoopTracks(this.els.ctx, {
+      lanes: this.layerLanes(),
+      positionBeats: this.looper.positionBeats(ctxTime),
+      loopBeats: this.transport.loopBeats,
+      isPlaying: this.transport.isPlaying,
+      canvasWidth: this.els.canvas.width,
+      canvasHeight: this.els.canvas.height,
+    });
+  }
+
+  /** The tracks, as the loop view needs them. */
+  private layerLanes(): TrackLane[] {
+    return this.looper.tracks.map((track) => ({
+      label: track.label,
+      mode: track.mode,
+      segments: trackSegments(track.take?.events ?? [], this.transport.loopBeats),
+      isRecording: this.looper.recordingId === track.id,
+      isEmpty: track.take === null,
+      muted: track.muted,
+    }));
+  }
+
+  private playLoopEvent(trackId: TrackId, resolved: ResolvedEvent): void {
+    const layer = this.layerFor(trackId);
+
+    if (resolved.notes.length === 0) {
+      layer.setVolume(0);
+      return;
+    }
+
+    layer.playNotes(resolved.notes);
+    layer.updateFilterSweep(resolved.tilt);
+    layer.setVolume(resolved.volume);
+  }
+
+  /**
+   * Rebuilds the per-layer mute buttons, but only when the layers have changed.
+   *
+   * Called from the render loop, so it has to be cheap: the signature check is
+   * what keeps it from rebuilding six buttons sixty times a second.
+   */
+  private renderLayerControls(): void {
+    const tracks = this.looper.tracks;
+    const signature = tracks.map((track) => `${track.id}:${track.muted}`).join(",");
+    if (signature === this.layerSignature) return;
+
+    this.layerSignature = signature;
+
+    this.els.layerControls.replaceChildren(
+      ...tracks.map((track) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = track.label;
+        button.classList.toggle("muted", track.muted);
+        button.title = track.muted ? `Bring ${track.label} back in` : `Drop ${track.label} out`;
+        button.addEventListener("click", () => this.toggleLayer(track.id));
+        return button;
+      }),
+    );
+  }
+
+  /** The last signature the layer buttons were built from, to avoid rebuilding. */
+  private layerSignature = "";
+
+  /**
    * The mono voice: pitch from the left hand's height, expression from the right.
    *
    * There is no chord to stabilise here — the note is simply wherever the hand
    * is — so this reads the frame directly rather than through the stabiliser.
    */
-  private updateMonoFrame(left: Hand | null, volume: number, tilt: number): void {
+  private updateMonoFrame(left: Hand | null, volume: number, tilt: number, ctxTime: number): void {
     const reading = this.mono.update(
       left ? getHandHeight(left) : null,
       this.monoStyle,
       this.tonicFrequency,
+    );
+
+    // A recorded melody is its degrees, not its frequencies, so it transposes
+    // with the key like the chord loop does.
+    this.looper.capture(
+      reading ? { kind: "note", degree: reading.degree } : null,
+      volume,
+      tilt,
+      ctxTime,
     );
 
     if (!reading) {
@@ -628,6 +981,37 @@ export class GestureSynthApp {
       };
     }
 
+    if (this.menuId === "layers") {
+      const tracks = this.looper.tracks;
+
+      // One entry per layer, and the menu stays open so a player can drop two
+      // parts out in one visit rather than reopening it each time.
+      const items: MenuOption[] = tracks.length
+        ? tracks.map((track) => ({
+            id: track.id,
+            label: `${track.label}: ${track.muted ? "off" : "on"}`,
+            keepsMenuOpen: true,
+          }))
+        : [{ id: "none", label: "No layers yet" }];
+
+      return { layout: "radial", items };
+    }
+
+    if (this.menuId === "transport") {
+      // The looper's controls, reachable without dropping a hand to the mouse —
+      // which is the whole point of running the transport through the menu.
+      return {
+        layout: "radial",
+        items: [
+          { id: "record", label: "Record" },
+          { id: "play", label: "Play" },
+          { id: "stop", label: "Stop" },
+          { id: "clear", label: "Clear" },
+        ],
+        activeId: this.looper.state,
+      };
+    }
+
     if (this.menuId === "settings") {
       const oneHanded: MenuOption = {
         id: ONE_HANDED_ID,
@@ -689,6 +1073,31 @@ export class GestureSynthApp {
 
     if (this.menuId === "instrument") {
       this.setInstrument(choice.id);
+      return;
+    }
+
+    if (this.menuId === "layers") {
+      if (this.looper.tracks.some((track) => track.id === choice.id)) {
+        this.toggleLayer(choice.id as TrackId);
+      }
+      return;
+    }
+
+    if (this.menuId === "transport") {
+      switch (choice.id) {
+        case "record":
+          this.recordLoop();
+          return;
+        case "play":
+          this.playLoop();
+          return;
+        case "stop":
+          this.stopLoop();
+          return;
+        case "clear":
+          this.clearLoop();
+          return;
+      }
       return;
     }
 

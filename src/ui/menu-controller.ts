@@ -82,13 +82,15 @@ export interface MenuControllerOptions {
 }
 
 /** A menu whose values are too many for a ring, so it opens as a list. */
-export type MenuTopic = "vocabulary" | "key" | "instrument" | "settings";
+export type MenuTopic = "vocabulary" | "key" | "instrument" | "layers" | "transport" | "settings";
 
 /** The menus the left hand chooses between. */
 export const MENU_TOPICS: readonly MenuOption[] = [
   { id: "vocabulary", label: "Vocabulary" },
   { id: "key", label: "Key" },
   { id: "instrument", label: "Instrument" },
+  { id: "layers", label: "Layers" },
+  { id: "transport", label: "Transport" },
   { id: "settings", label: "Settings" },
 ];
 
