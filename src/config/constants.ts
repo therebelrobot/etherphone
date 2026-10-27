@@ -80,6 +80,15 @@ export const MONO_STYLE_STORAGE_KEY = "etherphone.mono-style";
 export const CONTROL = {
   /** How long both hands must be closed before the menu opens (ms). */
   engageHoldMs: 600,
+  /**
+   * How far the cursor must travel before the menu starts responding to it, in
+   * canvas pixels.
+   *
+   * The menu opens with the cursor wherever the closed hand already is, which
+   * may be sitting over an option. Without this, the dwell would start before
+   * the player had read the menu, so nothing is selected until they move.
+   */
+  moveThreshold: 80,
   /** How long the cursor must rest on an option before it commits (ms). */
   dwellMs: 900,
   /** How long the menu stays open with the cursor off every option (ms). */

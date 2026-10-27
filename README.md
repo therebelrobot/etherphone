@@ -81,7 +81,7 @@ will load the app but cannot reach the camera.
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
 - Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
-- A **gesture menu**: close both hands to open it, point with the right hand, dwell to choose
+- A **gesture menu**: close both hands to open it around your hand, push out to point, dwell to choose
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -296,20 +296,31 @@ steps rather than going silent.
 
 Every setting used to be a `<select>`, which meant dropping your hands and reaching for
 a mouse mid-performance — and each feature added since has added another one. Close
-**both hands** for a moment and a radial menu opens over the instrument instead:
+**both hands** for a moment and a radial menu opens around the hand:
 
 - **Both hands closed** opens it. That gesture is safe precisely because it is already
   a silent shape in either mode — a closed chord hand chooses no chord and a closed
   voicing hand sounds nothing — so the menu can never be opened at the cost of a note.
-- **Point with the right hand**; the option you are pointing at is highlighted. The
-  selection is by _direction_, not proximity, so a coarse hand does not have to land on
-  the option, and a dead zone in the middle means nothing is selected unless the hand
-  is deliberately pushed outwards.
+- **The menu is anchored to the hand**, not to the middle of the screen, and it stays
+  where it opened. That is what makes it reachable: there is nowhere to travel to,
+  because the hand is already at the centre. It also means the hand starts _inside the
+  dead zone_, so nothing is selected — and no dwell begins — until it is deliberately
+  pushed outwards. A menu in a fixed place makes reading it a race against the dwell,
+  which is exactly what the first version got wrong.
+- **Push outwards to point.** The selection is by _direction_, not proximity, so a
+  coarse hand does not have to land on the option. A dead zone in the middle means the
+  centre is a neutral spot to retreat to.
 - **Dwell to commit.** A ring fills around the option; when it closes, the choice is
   applied and the menu shuts. Releasing the engage gesture before holding it again is
   required, so a player still holding their fists shut does not get a menu reopening
   underneath them.
-- **Idling times it out** after a few seconds with the cursor off every option.
+- **Idling times it out** after a few seconds with the hand off every option.
+
+The anchor is nudged back on screen when the hand is near an edge, so an option is never
+off-screen — where it could still be selected by direction but could not be seen.
+Because that nudge can leave the hand sitting off-centre, a deliberate move is required
+before anything is selected too; in the ordinary case the dead zone already covers it,
+and the two coincide.
 
 The menu carries whichever picker currently occupies the shared slot in the control
 stack — the gesture maps in Chords mode, the mono styles in Mono mode — because it

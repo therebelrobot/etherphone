@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL } from "../config/constants";
-import { layoutRadial, slotAt } from "./radial-menu";
+import { fitAnchor, layoutRadial, slotAt } from "./radial-menu";
 
 const THREE = [
   { id: "a", label: "A" },
@@ -17,6 +17,37 @@ function cursorAt(angle: number, distance = 150) {
     y: CENTER.y + Math.sin(angle) * distance,
   };
 }
+
+describe("fitAnchor", () => {
+  const MARGIN = CONTROL.radius + CONTROL.optionRadius;
+
+  it("leaves an anchor with room around it alone", () => {
+    expect(fitAnchor(CENTER, 1280, 900)).toEqual(CENTER);
+  });
+
+  it("pulls an anchor away from each edge by the menu's reach", () => {
+    expect(fitAnchor({ x: 0, y: 0 }, 1280, 900)).toEqual({ x: MARGIN, y: MARGIN });
+    expect(fitAnchor({ x: 1280, y: 900 }, 1280, 900)).toEqual({
+      x: 1280 - MARGIN,
+      y: 900 - MARGIN,
+    });
+  });
+
+  it("keeps every option on screen once fitted", () => {
+    const fitted = fitAnchor({ x: 5, y: 895 }, 1280, 900);
+
+    for (const slot of layoutRadial(THREE, fitted.x, fitted.y)) {
+      expect(slot.x - CONTROL.optionRadius).toBeGreaterThanOrEqual(0);
+      expect(slot.y - CONTROL.optionRadius).toBeGreaterThanOrEqual(0);
+      expect(slot.x + CONTROL.optionRadius).toBeLessThanOrEqual(1280);
+      expect(slot.y + CONTROL.optionRadius).toBeLessThanOrEqual(900);
+    }
+  });
+
+  it("centres instead when the canvas is smaller than the menu", () => {
+    expect(fitAnchor({ x: 0, y: 0 }, 100, 100)).toEqual({ x: 50, y: 50 });
+  });
+});
 
 describe("layoutRadial", () => {
   it("starts at the top and goes clockwise", () => {

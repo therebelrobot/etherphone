@@ -19,7 +19,7 @@
 import { CONTROL } from "../config/constants";
 import { DwellStabilizer } from "../music/stabilizer";
 import type { CanvasPoint, RadialSlot } from "../types";
-import { layoutRadial, slotAt } from "./radial-menu";
+import { layoutRadial, slotAt, fitAnchor } from "./radial-menu";
 import type { MenuOption } from "./radial-menu";
 
 /** One frame of input from the hands and the canvas. */
@@ -50,7 +50,18 @@ export interface MenuUpdate {
   readonly justOpened: boolean;
 }
 
+/** Timing and geometry, all defaulting to the values in `CONTROL`. */
+export interface MenuControllerOptions {
+  readonly engageHoldMs?: number;
+  readonly dwellMs?: number;
+  readonly idleTimeoutMs?: number;
+  /** How far the cursor must travel before the menu responds to it, in pixels. */
+  readonly moveThreshold?: number;
+}
+
 export class MenuController {
+  private readonly idleTimeoutMs: number;
+  private readonly moveThreshold: number;
   private readonly engage: DwellStabilizer<boolean>;
   private readonly dwell: DwellStabilizer<string>;
 
@@ -59,13 +70,26 @@ export class MenuController {
   private armed = true;
   private idleSince = 0;
 
-  constructor(
-    engageHoldMs: number = CONTROL.engageHoldMs,
-    dwellMs: number = CONTROL.dwellMs,
-    private readonly idleTimeoutMs: number = CONTROL.idleTimeoutMs,
-  ) {
-    this.engage = new DwellStabilizer<boolean>(engageHoldMs);
-    this.dwell = new DwellStabilizer<string>(dwellMs);
+  /**
+   * Where the menu is centred: the hand's position when it opened.
+   *
+   * Anchoring to the hand rather than to the middle of the screen is what makes
+   * the menu reachable without travelling to it — the hand is already at the
+   * centre, so it starts inside the dead zone and nothing is selected until the
+   * player deliberately pushes out.
+   */
+  private anchor: CanvasPoint | null = null;
+  /** Where the cursor was when the menu opened, to tell moving from resting. */
+  private steerFrom: CanvasPoint | null = null;
+  /** True once the cursor has travelled far enough to count as steering. */
+  private steering = false;
+
+  constructor(options: MenuControllerOptions = {}) {
+    this.idleTimeoutMs = options.idleTimeoutMs ?? CONTROL.idleTimeoutMs;
+    this.moveThreshold = options.moveThreshold ?? CONTROL.moveThreshold;
+
+    this.engage = new DwellStabilizer<boolean>(options.engageHoldMs ?? CONTROL.engageHoldMs);
+    this.dwell = new DwellStabilizer<string>(options.dwellMs ?? CONTROL.dwellMs);
   }
 
   /** Whether the menu currently owns the frame. */
@@ -82,25 +106,37 @@ export class MenuController {
       this.engage.reset();
     }
 
-    const centerX = input.canvasWidth / 2;
-    const centerY = input.canvasHeight / 2;
-
     let justOpened = false;
 
     if (!this.isOpen) {
       const engaged = this.engage.update(input.bothClosed, now);
 
-      if (!this.armed || !engaged) return this.closedUpdate(centerX, centerY);
+      if (!this.armed || !engaged) {
+        return this.closedUpdate(input.canvasWidth / 2, input.canvasHeight / 2);
+      }
+
+      const wanted = input.cursor ?? {
+        x: input.canvasWidth / 2,
+        y: input.canvasHeight / 2,
+      };
 
       this.isOpen = true;
       this.armed = false;
       this.idleSince = now;
       this.dwell.reset();
+      this.anchor = fitAnchor(wanted, input.canvasWidth, input.canvasHeight);
+      this.steerFrom = input.cursor;
+      this.steering = false;
       justOpened = true;
     }
 
-    const slots = layoutRadial(input.options, centerX, centerY);
-    const hovered = input.cursor ? slotAt(slots, input.cursor, centerX, centerY) : null;
+    const anchor = this.anchor ?? { x: input.canvasWidth / 2, y: input.canvasHeight / 2 };
+
+    this.trackSteering(input.cursor);
+
+    const slots = layoutRadial(input.options, anchor.x, anchor.y);
+    const hovered =
+      this.steering && input.cursor ? slotAt(slots, input.cursor, anchor.x, anchor.y) : null;
     const hoveredId = hovered?.id ?? null;
 
     // Pointing at anything keeps the menu alive; only idling times it out.
@@ -109,19 +145,19 @@ export class MenuController {
     const committed = this.dwell.update(hoveredId, now);
     if (committed !== null) {
       this.close();
-      return { ...this.closedUpdate(centerX, centerY), committed };
+      return { ...this.closedUpdate(anchor.x, anchor.y), committed };
     }
 
     if (now - this.idleSince > this.idleTimeoutMs) {
       this.close();
-      return this.closedUpdate(centerX, centerY);
+      return this.closedUpdate(anchor.x, anchor.y);
     }
 
     return {
       isOpen: true,
       slots,
-      centerX,
-      centerY,
+      centerX: anchor.x,
+      centerY: anchor.y,
       cursor: input.cursor,
       hoveredId,
       dwellProgress: hoveredId === null ? 0 : this.dwell.progress(now),
@@ -134,6 +170,30 @@ export class MenuController {
   close(): void {
     this.isOpen = false;
     this.dwell.reset();
+    this.steering = false;
+    this.steerFrom = null;
+    this.anchor = null;
+  }
+
+  /**
+   * Notes whether the cursor has moved far enough to count as steering.
+   *
+   * The dead zone already covers the ordinary case, because the hand starts at
+   * the centre of its own menu. This covers the one where the menu had to be
+   * nudged back on screen, which leaves the hand sitting off-centre from the
+   * start — and so, without this, already over an option.
+   */
+  private trackSteering(cursor: CanvasPoint | null): void {
+    if (this.steering || !cursor) return;
+
+    if (this.steerFrom === null) {
+      this.steerFrom = cursor;
+      return;
+    }
+
+    if (Math.hypot(cursor.x - this.steerFrom.x, cursor.y - this.steerFrom.y) > this.moveThreshold) {
+      this.steering = true;
+    }
   }
 
   private closedUpdate(centerX: number, centerY: number): MenuUpdate {

@@ -108,8 +108,37 @@ export function slotAt(
   return best;
 }
 
-/** Draws one frame of the menu over whatever is already on the canvas. */
-export function drawRadialMenu(ctx: CanvasRenderingContext2D | null, frame: MenuFrame): void {
+/**
+ * Keeps a whole menu on screen, given where it would like to be centred.
+ *
+ * The menu is anchored to a hand, and a hand near an edge would otherwise put
+ * options off-screen — where they can still be selected by direction but cannot
+ * be seen, which is worse than useless.
+ */
+export function fitAnchor(
+  anchor: CanvasPoint,
+  canvasWidth: number,
+  canvasHeight: number,
+): CanvasPoint {
+  const margin = CONTROL.radius + CONTROL.optionRadius;
+
+  return {
+    x: clampAxis(anchor.x, canvasWidth, margin),
+    y: clampAxis(anchor.y, canvasHeight, margin),
+  };
+}
+
+/** Clamps one axis, centring instead when the canvas is smaller than the menu. */
+function clampAxis(value: number, size: number, margin: number): number {
+  if (size <= margin * 2) return size / 2;
+
+  return Math.min(Math.max(value, margin), size - margin);
+}
+
+/** Draws one frame of the menu over whatever is already on the canvas. */ export function drawRadialMenu(
+  ctx: CanvasRenderingContext2D | null,
+  frame: MenuFrame,
+): void {
   if (!ctx) return;
 
   const { slots, centerX, centerY, cursor, hoveredId, dwellProgress } = frame;
