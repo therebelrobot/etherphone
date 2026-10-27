@@ -824,7 +824,7 @@ export class GestureSynthApp {
 
     this.renderLayerControls();
     drawLoopTracks(this.els.ctx, {
-      lanes: this.layerLanes(),
+      lanes: this.layerLanes(ctxTime),
       positionBeats: this.looper.positionBeats(ctxTime),
       loopBeats: this.transport.loopBeats,
       isPlaying: this.transport.isPlaying,
@@ -834,15 +834,25 @@ export class GestureSynthApp {
   }
 
   /** The tracks, as the loop view needs them. */
-  private layerLanes(): TrackLane[] {
-    return this.looper.tracks.map((track) => ({
-      label: track.label,
-      mode: track.mode,
-      segments: trackSegments(track.take?.events ?? [], this.transport.loopBeats),
-      isRecording: this.looper.recordingId === track.id,
-      isEmpty: track.take === null,
-      muted: track.muted,
-    }));
+  private layerLanes(ctxTime: number): TrackLane[] {
+    return this.looper.tracks.map((track) => {
+      const isRecording = this.looper.recordingId === track.id;
+
+      return {
+        label: track.label,
+        mode: track.mode,
+        // A lane being recorded is drawn only as far as the playhead, so its
+        // notes arrive as they are played rather than all at once at the end.
+        segments: trackSegments(
+          this.looper.eventsFor(track.id),
+          this.transport.loopBeats,
+          isRecording ? this.looper.positionBeats(ctxTime) : this.transport.loopBeats,
+        ),
+        isRecording,
+        isEmpty: track.take === null,
+        muted: track.muted,
+      };
+    });
   }
 
   private playLoopEvent(trackId: TrackId, resolved: ResolvedEvent): void {

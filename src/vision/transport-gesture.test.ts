@@ -143,15 +143,26 @@ describe("TransportGesture", () => {
     expect(reader.update(fist(0.5, 0.28), 400 + ARM + 80).command).toBe("record");
   });
 
-  it("treats a slow drift as no flick, and re-anchors so the fist can stay closed", () => {
+  it("re-anchors a hand that is only parked, so a later flick measures from there", () => {
     const reader = new TransportGesture();
     settled(reader);
 
-    // Far past the flick window: this is a drift, so it re-anchors rather than
-    // firing on the distance travelled.
-    expect(reader.update(fist(0.5, 0.65), ARM + FLICK + 50).command).toBeNull();
-    // And a small move from the new anchor is still nothing.
-    expect(reader.update(fist(0.5, 0.68), ARM + FLICK + 100).command).toBeNull();
+    // Nothing moved, and the window is long past.
+    expect(reader.update(fist(0.5, 0.5), ARM + FLICK + 50).readyForMs).toBe(0);
+    // A small move from the new anchor is still nothing.
+    expect(reader.update(fist(0.5, 0.52), ARM + FLICK + 100).command).toBeNull();
+  });
+
+  it("still fires on a slow, deliberate push", () => {
+    const reader = new TransportGesture();
+    settled(reader);
+
+    // A steady move spread well past the flick window. A hand on its way
+    // somewhere keeps its anchor, however long it takes.
+    reader.update(fist(0.5, 0.48), ARM + 300);
+    reader.update(fist(0.5, 0.44), ARM + 600);
+
+    expect(reader.update(fist(0.5, 0.39), ARM + 900).command).toBe("record");
   });
 
   it("forgets the fist on reset", () => {

@@ -213,6 +213,24 @@ describe("muting", () => {
     expect(looper.currentEvent("chord", 10)).toBeNull();
   });
 
+  it("shows what a recording has captured so far, before the take closes", () => {
+    const { looper } = rig();
+
+    looper.record(0, CHORDS);
+    ticks(looper, [1, 2]);
+    looper.capture(I_CHORD, 0.8, 0, 2);
+
+    // The take does not exist yet, but the lane has something to draw.
+    expect(looper.tracks[0].take).toBeNull();
+    expect(looper.eventsFor("chord")).toHaveLength(1);
+    expect(looper.eventsFor("mono")).toEqual([]);
+
+    looper.capture(V_CHORD, 0.8, 0, 3);
+    ticks(looper, [3.5, 4.5, 5.5, 6]);
+
+    expect(looper.eventsFor("chord").map((event) => event.beat)).toEqual([0, 2]);
+  });
+
   it("keeps a layer's mute across a re-record, and forgets it on clear", () => {
     const { looper } = rig();
     recordChords(looper);

@@ -65,8 +65,19 @@ const BOTTOM_OFFSET = 104;
  * An event holds until the next one, so a chord that lasts two bars is one
  * block two bars wide rather than a tick. Rests hold nothing, which is what
  * leaves a gap in the lane rather than a block coloured like silence.
+ *
+ * `limitBeats` is how far the lane is drawn — the playhead, while a recording is
+ * still open. A finished take stretches its last note to the end of the loop,
+ * because that is the truth of the finished thing. A recording in progress must
+ * not: its blocks grow with the playhead rather than claiming ground it has not
+ * covered yet.
  */
-export function trackSegments(events: readonly TakeEvent[], loopBeats: number): TrackSegment[] {
+export function trackSegments(
+  events: readonly TakeEvent[],
+  loopBeats: number,
+  limitBeats: number = loopBeats,
+): TrackSegment[] {
+  const limit = Math.min(loopBeats, Math.max(0, limitBeats));
   const sorted = [...events].sort((a, b) => a.beat - b.beat);
   const segments: TrackSegment[] = [];
 
@@ -74,9 +85,11 @@ export function trackSegments(events: readonly TakeEvent[], loopBeats: number): 
     const event = sorted[index];
     if (event.kind === "rest") continue;
 
-    const next = sorted[index + 1];
     const startBeat = Math.max(0, event.beat);
-    const endBeat = Math.min(next ? next.beat : loopBeats, loopBeats);
+    if (startBeat >= limit) continue;
+
+    const next = sorted[index + 1];
+    const endBeat = Math.min(next ? next.beat : loopBeats, loopBeats, limit);
     if (endBeat <= startBeat) continue;
 
     segments.push({

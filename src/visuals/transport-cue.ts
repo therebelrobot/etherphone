@@ -122,6 +122,35 @@ export function heatColor(progress: number): string {
   return HOT;
 }
 
+/**
+ * The heat ramp the tracked path is painted with: cold ember at the anchor,
+ * gold through the middle, white-hot at the fist.
+ *
+ * A *ramp* rather than the three bands above, because this one is read as a
+ * shape rather than a state — the eye follows where the hand has come from and
+ * how hot the far end is getting.
+ */
+const HEAT_RAMP: readonly (readonly [number, number, number])[] = [
+  [122, 74, 18],
+  [232, 161, 61],
+  [255, 243, 214],
+];
+
+/** The ramp's colour at `t`, 0..1 from the anchor to the fist. */
+export function heatRamp(t: number): string {
+  const scaled = Math.min(1, Math.max(0, t)) * (HEAT_RAMP.length - 1);
+  const index = Math.min(HEAT_RAMP.length - 2, Math.floor(scaled));
+  const mix = scaled - index;
+
+  const from = HEAT_RAMP[index];
+  const to = HEAT_RAMP[index + 1];
+  const rgb = from.map((channel, channelIndex) =>
+    Math.round(channel + (to[channelIndex] - channel) * mix),
+  );
+
+  return `rgb(${rgb.join(", ")})`;
+}
+
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
@@ -147,30 +176,73 @@ function drawArrow(
   ctx.restore();
 }
 
-/** The path the fist has taken since it settled. */
+/** Width of the tracked path at its cold end and at the fist, in pixels. */
+const TRAIL_COLD_WIDTH = 7;
+const TRAIL_HOT_WIDTH = 24;
+
+/** One segment of the path. */
+function strokeSegment(ctx: CanvasRenderingContext2D, from: CanvasPoint, to: CanvasPoint): void {
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+}
+
+/**
+ * The path the fist has taken since it settled, painted as a heat trace.
+ *
+ * Drawn per segment rather than as one polyline, because each segment carries
+ * its own width and colour: the path thickens and heats from the anchor to the
+ * fist, and a wide additive pass under a narrow core makes the overlaps glow.
+ * That is what turns a line into a *shape* — where the hand came from, and how
+ * hard it is travelling now.
+ */
 function drawTrail(
   ctx: CanvasRenderingContext2D,
   anchor: CanvasPoint,
   trail: readonly CanvasPoint[],
-  colour: string,
   progress: number,
+  fade: number,
 ): void {
   const points = [anchor, ...trail];
   if (points.length < 2) return;
 
+  // The whole trace runs hotter as the flick approaches its threshold.
+  const heat = 0.45 + progress * 0.55;
+  const last = points.length - 1;
+
   ctx.save();
-  ctx.strokeStyle = colour;
-  ctx.globalAlpha = 0.3 + progress * 0.55;
-  ctx.lineWidth = 2 + progress * 3;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  for (const point of points.slice(1)) ctx.lineTo(point.x, point.y);
-  ctx.stroke();
+  // The glow pass, blended additively so the overlaps build up.
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = fade * (0.16 + progress * 0.18);
+
+  for (let index = 1; index <= last; index += 1) {
+    const along = index / last;
+    ctx.strokeStyle = heatRamp(along * heat);
+    ctx.lineWidth = trailWidth(along) * 2.1;
+    strokeSegment(ctx, points[index - 1], points[index]);
+  }
+
+  // The core, opaque enough to stay legible over a busy camera frame.
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = fade * (0.6 + progress * 0.35);
+
+  for (let index = 1; index <= last; index += 1) {
+    const along = index / last;
+    ctx.strokeStyle = heatRamp(along * heat);
+    ctx.lineWidth = trailWidth(along);
+    strokeSegment(ctx, points[index - 1], points[index]);
+  }
 
   ctx.restore();
+}
+
+/** The path's width at `along`, 0 at the anchor and 1 at the fist. */
+function trailWidth(along: number): number {
+  return TRAIL_COLD_WIDTH + (TRAIL_HOT_WIDTH - TRAIL_COLD_WIDTH) * along;
 }
 
 /** The ring that closes as the flick approaches the threshold. */
@@ -240,7 +312,7 @@ export function drawTransportCue(ctx: CanvasRenderingContext2D, frame: Transport
   ctx.fillStyle = BACKING;
   ctx.fill();
 
-  drawTrail(ctx, frame.anchor, frame.trail, heat, frame.progress);
+  drawTrail(ctx, frame.anchor, frame.trail, frame.progress, alpha);
 
   ctx.beginPath();
   ctx.arc(frame.anchor.x, frame.anchor.y, 3, 0, Math.PI * 2);

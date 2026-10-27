@@ -66,7 +66,7 @@ function toEvent(intent: RecordedIntent, beat: number, volume: number, tilt: num
 }
 
 export class Recorder {
-  private events: TakeEvent[] = [];
+  private captured: TakeEvent[] = [];
   private last: TakeEvent | null = null;
   private active = false;
 
@@ -74,9 +74,20 @@ export class Recorder {
     return this.active;
   }
 
+  /**
+   * What has been captured so far.
+   *
+   * Exposed while the take is still open so it can be *drawn* as it is played:
+   * a loop view that stays blank until the recording closes tells the player
+   * nothing about what took.
+   */
+  get events(): readonly TakeEvent[] {
+    return this.captured;
+  }
+
   /** Begins a fresh take. */
   start(): void {
-    this.events = [];
+    this.captured = [];
     this.last = null;
     this.active = true;
   }
@@ -98,7 +109,7 @@ export class Recorder {
     // Nothing changed since the last event, so there is nothing to store.
     if (this.last && sameIntent(event, this.last)) return;
 
-    this.events.push(event);
+    this.captured.push(event);
     this.last = event;
   }
 
@@ -112,14 +123,14 @@ export class Recorder {
   finish(options: FinishOptions): Take {
     this.active = false;
 
-    const events = this.events.filter((event) => event.beat < options.loopBeats);
+    const events = this.captured.filter((event) => event.beat < options.loopBeats);
 
     return { bpm: options.bpm, loopBeats: options.loopBeats, events };
   }
 
   /** Discards everything, e.g. when the take is cleared. */
   reset(): void {
-    this.events = [];
+    this.captured = [];
     this.last = null;
     this.active = false;
   }

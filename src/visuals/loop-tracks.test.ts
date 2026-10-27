@@ -70,4 +70,17 @@ describe("trackSegments", () => {
   it("has nothing to draw for an empty take", () => {
     expect(trackSegments([], 8)).toEqual([]);
   });
+
+  it("draws only as far as the limit, for a lane still being recorded", () => {
+    const segments = trackSegments([chord(0), chord(4, "V")], 8, 5);
+
+    expect(segments.map((segment) => [segment.startBeat, segment.endBeat])).toEqual([
+      [0, 4],
+      [4, 5],
+    ]);
+  });
+
+  it("draws nothing before the playhead has reached the first note", () => {
+    expect(trackSegments([chord(2)], 8, 1)).toEqual([]);
+  });
 });

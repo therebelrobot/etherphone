@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMAND_LABELS, CUE_RADIUS, cueArrows, heatColor } from "./transport-cue";
+import { COMMAND_LABELS, CUE_RADIUS, cueArrows, heatColor, heatRamp } from "./transport-cue";
 
 const POINT = { x: 400, y: 300 };
 
@@ -57,6 +57,31 @@ describe("heatColor", () => {
     // The band that says "this will fire".
     expect(heatColor(0.9)).toBe("#fff3d6");
     expect(heatColor(1)).toBe("#fff3d6");
+  });
+});
+
+describe("heatRamp", () => {
+  it("runs from ember, through gold, to white-hot", () => {
+    expect(heatRamp(0)).toBe("rgb(122, 74, 18)");
+    expect(heatRamp(0.5)).toBe("rgb(232, 161, 61)");
+    expect(heatRamp(1)).toBe("rgb(255, 243, 214)");
+  });
+
+  it("clamps outside the path", () => {
+    expect(heatRamp(-1)).toBe(heatRamp(0));
+    expect(heatRamp(2)).toBe(heatRamp(1));
+  });
+
+  it("moves monotonically hotter along the path", () => {
+    const brightness = (colour: string): number =>
+      colour
+        .replace(/[^\d,]/g, "")
+        .split(",")
+        .map(Number)
+        .reduce((sum, channel) => sum + channel, 0);
+
+    expect(brightness(heatRamp(0.25))).toBeGreaterThan(brightness(heatRamp(0)));
+    expect(brightness(heatRamp(0.75))).toBeGreaterThan(brightness(heatRamp(0.25)));
   });
 });
 

@@ -442,8 +442,13 @@ makes a looper something you can _perform_ with rather than just listen to.
 ![Two layers looping: a chord bed and a melody](docs/screenshots/loop-tracks/02-two-layers.png)
 
 The lanes are the loop: one per layer, its notes as blocks along the bar, and a
-playhead sweeping across. A dropped-out layer goes faded and struck through, so the
-arrangement reads at a glance.
+playhead sweeping across. A layer **fills as it is recorded** — its blocks grow with the
+playhead rather than appearing all at once when the take closes, so you can see what is
+landing while you are still playing it:
+
+![A layer filling as it records, up to the playhead](docs/screenshots/loop-tracks/04-recording.png)
+
+A dropped-out layer goes faded and struck through, so the arrangement reads at a glance:
 
 ![A layer dropped out, drawn struck through](docs/screenshots/loop-tracks/03-layer-muted.png)
 
@@ -477,11 +482,13 @@ a menu that is still counting down, and cancels it.
 #### The cue follows the flick
 
 A gesture with no visible state is one nobody trusts, so the cue says _what you are
-doing_, not just _what you could do_. The fist's path is traced from where it settled, a
-ring closes as the flick approaches the threshold, and the command you are heading for
-lights up while the other three step back:
+doing_, not just _what you could do_. The fist's path is traced from where it settled as
+a **heat trace** — ember-dark and thin at the tail, thickening and heating to white-hot at
+the fist, with an additive pass underneath so the overlaps glow. A ring closes as the
+flick approaches the threshold, and the command you are heading for lights up while the
+other three step back:
 
-![Mid-flick: the path traced, the ring closing, Rec lit](docs/screenshots/transport-gestures/02-valid.png)
+![Mid-flick: the heat trace, the ring closing, Rec lit](docs/screenshots/transport-gestures/02-valid.png)
 
 Past three-quarters of the way it turns **white-hot** — the band that says _this will
 fire_ — and when it does, the confirmation arrives at the hand rather than only in a

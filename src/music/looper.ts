@@ -102,6 +102,20 @@ export class Looper {
   }
 
   /**
+   * The events to draw for a track: its take, or what is being recorded into it.
+   *
+   * A track being recorded has no take yet — the take is what a recording
+   * *becomes* — but the player still needs to see it arriving, so the open
+   * recording is read straight from the recorder.
+   */
+  eventsFor(id: TrackId): readonly TakeEvent[] {
+    const track = this.tracksValue.get(id);
+    if (!track) return [];
+
+    return this.recordingValue === id ? this.recorder.events : (track.take?.events ?? []);
+  }
+
+  /**
    * Arms a recording into a track, which begins on the next bar line.
    *
    * The first track sets the loop's phase at the next bar — a bar of count-in

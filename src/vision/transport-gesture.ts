@@ -87,6 +87,19 @@ const TRAIL_LENGTH = 16;
  */
 const DIRECTION_DEAD_ZONE = 0.25;
 
+/**
+ * How still a hand has to be, relative to the travel, to count as resting.
+ *
+ * Past the flick window the anchor is reset — but only for a hand that is
+ * *resting*. A hand that is on its way somewhere keeps its anchor however long
+ * it takes, because a slow, deliberate push is still a push; only a hand that
+ * is parked is re-measured.
+ */
+const DRIFT_FRACTION = 0.35;
+
+/** Even a twitching hand is re-anchored eventually, however small the twitch. */
+const RESTING_RESET_FACTOR = 3;
+
 /** The reading for a frame with nothing to say. */
 function nothing(trail: readonly CanvasPoint[] = []): TransportGestureReading {
   return {
@@ -172,9 +185,36 @@ export class TransportGesture {
 
     const readyForMs = now - this.phaseSince;
 
-    if (readyForMs > this.flickMs) {
-      // Too slow to be a flick. Re-anchor where the hand has drifted to, so the
-      // fist can stay closed and the player can try again.
+    // The frame is drawn mirrored, so a flick to the player's own right is a
+    // *falling* landmark x. Screen x is the mirror of it; y is not mirrored.
+    const screenDx = this.anchor.x - center.x;
+    const screenDy = center.y - this.anchor.y;
+    const distance = Math.hypot(screenDx, screenDy);
+
+    const direction =
+      distance > this.travel * DIRECTION_DEAD_ZONE ? commandForDirection(screenDx, screenDy) : null;
+
+    if (distance >= this.travel) {
+      this.phase = "fired";
+
+      return {
+        command: commandForDirection(screenDx, screenDy),
+        ready: false,
+        readyForMs: 0,
+        anchor: this.anchor,
+        trail: this.trail,
+        direction,
+        progress: 1,
+      };
+    }
+
+    // Too slow to be a flick *from here* — but only a hand that is **parked** is
+    // re-measured. One that is still travelling keeps its anchor and keeps
+    // closing the gap, so a slow, deliberate push still fires.
+    const resting = distance < this.travel * DRIFT_FRACTION;
+    const stalled = readyForMs > this.flickMs * RESTING_RESET_FACTOR;
+
+    if (readyForMs > this.flickMs && (resting || stalled)) {
       this.anchor = center;
       this.phaseSince = now;
       this.trail = [center];
@@ -182,31 +222,7 @@ export class TransportGesture {
       return this.waiting(0, this.trail, 0);
     }
 
-    // The frame is drawn mirrored, so a flick to the player's own right is a
-    // *falling* landmark x. Screen x is the mirror of it; y is not mirrored.
-    const screenDx = this.anchor.x - center.x;
-    const screenDy = center.y - this.anchor.y;
-    const distance = Math.hypot(screenDx, screenDy);
-
-    const progress = Math.min(1, distance / this.travel);
-    const direction =
-      distance > this.travel * DIRECTION_DEAD_ZONE ? commandForDirection(screenDx, screenDy) : null;
-
-    if (distance < this.travel) {
-      return this.waiting(readyForMs, this.trail, progress, direction);
-    }
-
-    this.phase = "fired";
-
-    return {
-      command: commandForDirection(screenDx, screenDy),
-      ready: false,
-      readyForMs: 0,
-      anchor: this.anchor,
-      trail: this.trail,
-      direction,
-      progress: 1,
-    };
+    return this.waiting(readyForMs, this.trail, Math.min(1, distance / this.travel), direction);
   }
 
   private waiting(
