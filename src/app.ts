@@ -74,7 +74,14 @@ import type { TransportCommand } from "./vision/transport-gesture";
 import { drawEnergy } from "./visuals/energy";
 import { drawLoopTracks, trackSegments } from "./visuals/loop-tracks";
 import type { TrackLane } from "./visuals/loop-tracks";
-import { drawTransportCue } from "./visuals/transport-cue";
+import { drawTransportCue, drawTransportFlash } from "./visuals/transport-cue";
+import type { TransportCueFrame } from "./visuals/transport-cue";
+
+/** How long a flick's confirmation stays up, in milliseconds. */
+const TRANSPORT_FLASH_MS = 380;
+
+/** The fist cue for one frame, before the canvas size is attached to it. */
+type TransportCue = Omit<TransportCueFrame, "canvasWidth" | "canvasHeight">;
 
 /** The id of the one-handed toggle, which is not a mode or a value. */
 const ONE_HANDED_ID = "one-handed";
@@ -155,6 +162,20 @@ export class GestureSynthApp {
 
   private lastVideoTime = -1;
 
+  /**
+   * The most recent inference.
+   *
+   * Kept so the frame can be redrawn every animation frame — overlays have to be
+   * repainted on a cleared canvas, and re-running detection at 60Hz to do that
+   * would be pure waste.
+   */
+  private lastResults: HandLandmarkerResult = {
+    landmarks: [],
+    worldLandmarks: [],
+    handedness: [],
+    handednesses: [],
+  };
+
   private tonicFrequency: number;
   private keyName: KeyName;
   private gestureMap: GestureMap;
@@ -164,11 +185,23 @@ export class GestureSynthApp {
   /** Whether the gesture menu owns the frame. */
   private readonly menu = new MenuController();
 
-  /** The fast transport: one fist, flicked in a direction. */
-  private readonly transportGesture = new TransportGesture();
+  /**
+   * The fast transport: one fist, flicked in a direction.
+   *
+   * One reader per hand, because with both hands closed either may be the one
+   * that flicks.
+   */
+  private readonly fists: Record<Handedness, TransportGesture> = {
+    Left: new TransportGesture(),
+    Right: new TransportGesture(),
+  };
 
-  /** Where the fist cue should be drawn this frame, or `null`. */
-  private transportCue: { point: CanvasPoint; readyForMs: number } | null = null;
+  /** The cue to draw this frame, or `null`. */
+  private transportCue: TransportCue | null = null;
+
+  /** The confirmation of the last flick, until it fades. */
+  private transportFlash: { command: TransportCommand; point: CanvasPoint; at: number } | null =
+    null;
 
   constructor() {
     this.els = getAppElements();
@@ -652,23 +685,27 @@ export class GestureSynthApp {
     const tick = (): void => {
       const now = performance.now();
 
+      // Inference only when the video has actually advanced, but the frame is
+      // drawn **every** frame: drawing only on new video leaves the overlays to
+      // pile up on top of one another between clears, which smears everything
+      // that moves — the menu, the ribbon, and the fist cue alike.
       if (this.els.video.currentTime !== this.lastVideoTime) {
         this.lastVideoTime = this.els.video.currentTime;
-
-        const results = handLandmarker.detectForVideo(this.els.video, now);
-        drawFrame(
-          this.els.ctx,
-          this.els.video,
-          results,
-          this.els.canvas.width,
-          this.els.canvas.height,
-        );
-        this.captureHands(results);
+        this.lastResults = handLandmarker.detectForVideo(this.els.video, now);
+        this.captureHands(this.lastResults);
       }
+
+      drawFrame(
+        this.els.ctx,
+        this.els.video,
+        this.lastResults,
+        this.els.canvas.width,
+        this.els.canvas.height,
+      );
 
       this.updateFrame(now);
       // The cue is drawn last so it sits over the ribbon and the loop's lanes.
-      this.renderTransportCue();
+      this.renderTransportCue(now);
       requestAnimationFrame(tick);
     };
 
@@ -702,18 +739,16 @@ export class GestureSynthApp {
     // mid-performance should not stop the music it is playing over.
     this.updateLoop(ctxTime);
 
+    // The fist is read *before* the menu, so a flick can beat an engage that is
+    // still counting down — and cancel it, because a flick is deliberate.
+    this.updateTransportGesture(now, Left, Right);
+
     // The menu takes the whole frame when it is up: opening it is a deliberate
     // pause, so nothing *played* sounds underneath it.
     if (this.updateControlMenu(now, Left, Right)) {
-      // The transport stands aside for it: both fists are the menu's own
-      // gesture, so a flick while it is up would be a guess about which one the
-      // player meant.
-      this.transportGesture.reset();
       this.transportCue = null;
       return;
     }
-
-    this.updateTransportGesture(now, Left, Right);
 
     // Expression follows the right hand in both modes: it is the "how it
     // sounds" hand, whether the left hand is playing chords or a melody.
@@ -908,44 +943,98 @@ export class GestureSynthApp {
   /**
    * The fast transport: one fist, flicked in a direction.
    *
-   * Two closed hands is the menu's own gesture, so a fist is read only while the
-   * *other* hand is open. That single rule is what keeps the two closed-hand
-   * meanings from ever colliding: one fist is a transport, two is the menu.
+   * Each hand is read separately, because with both hands closed either one may
+   * be the one that flicks — and a flick is *deliberate*, so it is allowed to
+   * beat a menu engage that is still counting down. That is the split: a closed
+   * hand that **moves** is a transport, a closed pair that **holds** is the menu.
    *
    * The cue is stashed rather than drawn, so it can be put on top of everything
    * else once the frame is complete.
    */
   private updateTransportGesture(now: number, left: Hand | null, right: Hand | null): void {
-    // One-handed staging hands the closed hand to the menu, so the fist has
-    // nothing left to mean here.
-    if (this.singleHanded) {
-      this.transportGesture.reset();
+    const hands: readonly (readonly [Handedness, Hand | null])[] = [
+      ["Left", left],
+      ["Right", right],
+    ];
+
+    // While the menu owns the frame the transport stands aside entirely, so a
+    // flick inside it cannot mean two things.
+    if (this.menu.open) {
+      this.fists.Left.reset();
+      this.fists.Right.reset();
       this.transportCue = null;
       return;
     }
 
-    const leftClosed = left !== null && isHandClosed(left);
-    const rightClosed = right !== null && isHandClosed(right);
+    const closed = hands.filter(([, hand]) => hand !== null && isHandClosed(hand));
+    const bothClosed = closed.length === 2;
 
-    const fist = leftClosed !== rightClosed ? (leftClosed ? left : right) : null;
-    const reading = this.transportGesture.update(fist, now);
+    let cue: TransportCue | null = null;
+    let fired: TransportCommand | null = null;
+    let firedAt: CanvasPoint | null = null;
 
-    const point = reading.ready && fist ? this.cursorFor(fist) : null;
-    this.transportCue = point ? { point, readyForMs: reading.readyForMs } : null;
+    for (const [handedness, hand] of hands) {
+      const reading = this.fists[handedness].update(hand, now);
 
-    if (reading.command !== null) this.runTransportCommand(reading.command);
+      if (reading.command !== null && hand) {
+        fired = reading.command;
+        firedAt = this.placePoint(getHandCenter(hand));
+      }
+
+      // With both hands closed the fist is sharing the hold with the menu, so
+      // its cue waits until a flick is actually under way — otherwise a hand
+      // held for the menu would be told it could flick.
+      const showCue = reading.ready && (!bothClosed || reading.progress > 0);
+      const point = showCue && hand ? this.placePoint(getHandCenter(hand)) : null;
+      const anchor = reading.anchor ? this.placePoint(reading.anchor) : null;
+      if (!point || !anchor) continue;
+
+      cue = {
+        point,
+        anchor,
+        trail: reading.trail.flatMap((step) => this.placePoint(step) ?? []),
+        direction: reading.direction,
+        progress: reading.progress,
+        readyForMs: reading.readyForMs,
+      };
+    }
+
+    this.transportCue = cue;
+
+    if (fired !== null) {
+      // A flick is deliberate, so it takes the hand back from a menu that was
+      // still counting down, and confirms itself where the hand is.
+      this.menu.cancelEngage();
+      this.transportFlash = firedAt ? { command: fired, point: firedAt, at: now } : null;
+      this.runTransportCommand(fired);
+    }
   }
 
-  /** Draws the fist cue, if one is waiting. */
-  private renderTransportCue(): void {
+  /** Draws the fist cue and its confirmation, if either is live. */
+  private renderTransportCue(now: number): void {
     const cue = this.transportCue;
-    if (!cue) return;
+    if (cue) {
+      drawTransportCue(this.els.ctx, {
+        ...cue,
+        canvasWidth: this.els.canvas.width,
+        canvasHeight: this.els.canvas.height,
+      });
+    }
 
-    drawTransportCue(this.els.ctx, {
-      point: cue.point,
-      readyForMs: cue.readyForMs,
-      canvasWidth: this.els.canvas.width,
-      canvasHeight: this.els.canvas.height,
+    const flash = this.transportFlash;
+    if (!flash) return;
+
+    const ageMs = now - flash.at;
+    if (ageMs > TRANSPORT_FLASH_MS) {
+      this.transportFlash = null;
+      return;
+    }
+
+    drawTransportFlash(this.els.ctx, {
+      command: flash.command,
+      point: flash.point,
+      ageMs,
+      durationMs: TRANSPORT_FLASH_MS,
     });
   }
 
@@ -1196,19 +1285,28 @@ export class GestureSynthApp {
   private singleHanded = false;
 
   /**
-   * The right hand's palm centre, in canvas coordinates, for the menu cursor.
+   * A normalised frame point, in canvas coordinates.
+   *
+   * Everything that has to line up with the drawn hand comes through here,
+   * because `drawFrame` draws inside a mirrored transform — see
+   * {@link landmarkToCanvas}.
    */
-  private cursorFor(hand: Hand): CanvasPoint | null {
+  private placePoint(point: { readonly x: number; readonly y: number }): CanvasPoint | null {
     const { videoWidth, videoHeight } = this.els.video;
     if (!videoWidth || !videoHeight) return null;
 
     return landmarkToCanvas(
-      getHandCenter(hand),
+      point,
       videoWidth,
       videoHeight,
       this.els.canvas.width,
       this.els.canvas.height,
     );
+  }
+
+  /** A hand's palm centre, in canvas coordinates, for the menu cursor. */
+  private cursorFor(hand: Hand): CanvasPoint | null {
+    return this.placePoint(getHandCenter(hand));
   }
 
   /** Sends the current intent to the synth, or silences it. */

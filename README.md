@@ -458,7 +458,7 @@ The menu is _deliberate_ — open it, pick Transport, dwell on an option — whi
 for a setting and far too slow for a transport you reach for mid-phrase. So the transport
 gets a fast path: **close one hand and flick it**.
 
-![The fist cue: Rec above, Play to the right, Stop below, Clear to the left](docs/screenshots/transport-gestures/01-fist-cue.png)
+![The fist cue: Rec above, Play to the right, Stop below, Clear to the left](docs/screenshots/transport-gestures/01-waiting.png)
 
 ```
            ↑ Record
@@ -468,16 +468,29 @@ gets a fast path: **close one hand and flick it**.
 
 A closed hand is the right modifier because it is already **silent** in both modes — a
 closed chord hand chooses no chord, a closed voicing hand sounds nothing — so holding one
-can never cost a note, and it cannot be mistaken for playing. One flick is one command;
-the hand has to open before it will fire again. Two closed hands is still the menu, which
-is what keeps the two meanings of a closed hand from ever colliding.
+can never cost a note, and it cannot be mistaken for playing.
 
-The commands are drawn around the fist while it waits, fading in as the hand settles:
-a gesture vocabulary nobody can see is one nobody uses. It is also in the help modal.
+One flick is one command; the hand has to open before it will fire again. **A closed hand
+that moves is the transport, a closed pair that holds is the menu** — so a flick can beat
+a menu that is still counting down, and cancels it.
+
+#### The cue follows the flick
+
+A gesture with no visible state is one nobody trusts, so the cue says _what you are
+doing_, not just _what you could do_. The fist's path is traced from where it settled, a
+ring closes as the flick approaches the threshold, and the command you are heading for
+lights up while the other three step back:
+
+![Mid-flick: the path traced, the ring closing, Rec lit](docs/screenshots/transport-gestures/02-valid.png)
+
+Past three-quarters of the way it turns **white-hot** — the band that says _this will
+fire_ — and when it does, the confirmation arrives at the hand rather than only in a
+readout across the screen:
+
+![The confirmation: a ring and the command name, at the fist](docs/screenshots/transport-gestures/03-fired.png)
 
 Two things worth knowing: **Clear is immediate** — it is one flick, not a confirmation —
-and the fist gestures are off in one-handed staging, where a closed hand already means
-the menu.
+and the whole vocabulary is also in the help modal.
 
 ### Instruments
 

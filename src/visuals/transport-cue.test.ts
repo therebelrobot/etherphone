@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CUE_RADIUS, cueArrows } from "./transport-cue";
+import { COMMAND_LABELS, CUE_RADIUS, cueArrows, heatColor } from "./transport-cue";
 
 const POINT = { x: 400, y: 300 };
 
@@ -38,5 +38,31 @@ describe("cueArrows", () => {
     expect(byLabel.Play.angle).toBeCloseTo(0, 6);
     expect(byLabel.Stop.angle).toBeCloseTo(Math.PI / 2, 6);
     expect(byLabel.Clear.angle).toBeCloseTo(Math.PI, 6);
+  });
+
+  it("tags every arrow with the command it fires", () => {
+    expect(cueArrows(POINT).map((arrow) => arrow.command)).toEqual([
+      "record",
+      "play",
+      "stop",
+      "clear",
+    ]);
+  });
+});
+
+describe("heatColor", () => {
+  it("runs dim, then gold, then white-hot as the flick approaches", () => {
+    expect(heatColor(0)).toBe("rgba(232, 161, 61, 0.55)");
+    expect(heatColor(0.4)).toBe("#e8a13d");
+    // The band that says "this will fire".
+    expect(heatColor(0.9)).toBe("#fff3d6");
+    expect(heatColor(1)).toBe("#fff3d6");
+  });
+});
+
+describe("COMMAND_LABELS", () => {
+  it("names every command, for the confirmation flash", () => {
+    expect(Object.keys(COMMAND_LABELS).sort()).toEqual(["clear", "play", "record", "stop"]);
+    expect(COMMAND_LABELS.record).toBe("RECORD");
   });
 });

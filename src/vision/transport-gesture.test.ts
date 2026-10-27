@@ -162,3 +162,56 @@ describe("TransportGesture", () => {
     expect(reader.update(fist(0.5, 0.28), ARM + 80).command).toBeNull();
   });
 });
+
+describe("TransportGesture feedback", () => {
+  it("reports no direction until the fist is clear of its dead zone", () => {
+    const reader = new TransportGesture();
+    settled(reader);
+
+    const inside = reader.update(fist(0.5, 0.5 - TRAVEL * 0.2), ARM + 40);
+    expect(inside.direction).toBeNull();
+    expect(inside.progress).toBeCloseTo(0.2, 5);
+
+    const outside = reader.update(fist(0.5, 0.5 - TRAVEL * 0.5), ARM + 80);
+    expect(outside.direction).toBe("record");
+    expect(outside.progress).toBeCloseTo(0.5, 5);
+  });
+
+  it("reports a full progress exactly on the frame it fires", () => {
+    const reader = new TransportGesture();
+    settled(reader);
+
+    // Just past the threshold, since exactly on it is a floating-point coin toss.
+    const reading = reader.update(fist(0.5, 0.5 - TRAVEL * 1.05), ARM + 60);
+
+    expect(reading.command).toBe("record");
+    expect(reading.progress).toBe(1);
+  });
+
+  it("traces the path the fist has taken, from where it settled", () => {
+    const reader = new TransportGesture();
+    settled(reader);
+
+    reader.update(fist(0.5, 0.45), ARM + 40);
+    const reading = reader.update(fist(0.5, 0.4), ARM + 80);
+
+    expect(reading.trail[0]).toEqual({ x: 0.5, y: 0.5 });
+    expect(reading.trail.at(-1)).toEqual({ x: 0.5, y: 0.4 });
+    expect(reading.trail.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps the path bounded, and drops it when the hand opens", () => {
+    const reader = new TransportGesture();
+    reader.update(fist(0.5, 0.5), 0);
+    reader.update(fist(0.5, 0.5), ARM);
+
+    // Weave about, but never far enough to fire and never slower than a flick.
+    for (let step = 0; step < 60; step += 1) {
+      const offset = TRAVEL * 0.3 * Math.sin(step);
+      reader.update(fist(0.5, 0.5 - offset), ARM + step);
+    }
+
+    expect(reader.update(fist(0.5, 0.5), ARM + 60).trail).toHaveLength(16);
+    expect(reader.update(null, ARM + 80).trail).toEqual([]);
+  });
+});

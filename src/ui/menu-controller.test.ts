@@ -100,6 +100,18 @@ describe("MenuController opening", () => {
     expect(controller.update(input({ bothClosed: true }), HOLD).isOpen).toBe(true);
   });
 
+  it("lets a flick cancel a hold that has not opened the menu yet", () => {
+    const controller = makeController();
+
+    controller.update(input({ bothClosed: true }), 0);
+    controller.update(input({ bothClosed: true }), HOLD - 100);
+    controller.cancelEngage();
+
+    // The hold starts again from the cancellation, so it needs the full time.
+    expect(controller.update(input({ bothClosed: true }), HOLD).isOpen).toBe(false);
+    expect(controller.update(input({ bothClosed: true }), HOLD * 2).isOpen).toBe(true);
+  });
+
   it("reports the frame it opened on, so the caller can go quiet", () => {
     const controller = makeController();
 
