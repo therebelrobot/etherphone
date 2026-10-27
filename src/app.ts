@@ -159,8 +159,7 @@ export class GestureSynthApp {
   async start(): Promise<void> {
     this.wireOverlays();
     this.bindControls();
-    this.guide.render(this.keyName, this.gestureMap);
-    this.help.render(this.gestureMap);
+    this.refreshHelp();
     this.synth.setInstrument(this.els.instrumentSelect.value);
 
     await startCamera(this.els.video);
@@ -181,7 +180,7 @@ export class GestureSynthApp {
     this.els.keySelect.addEventListener("change", () => {
       this.tonicFrequency = Number(this.els.keySelect.value);
       this.keyName = readKeyName(this.els.keySelect);
-      this.guide.render(this.keyName, this.gestureMap);
+      this.refreshHelp();
     });
 
     this.els.gestureMapSelect.addEventListener("change", () => {
@@ -284,8 +283,7 @@ export class GestureSynthApp {
     this.gestureMap = getGestureMap(id);
     this.els.gestureMapSelect.value = this.gestureMap.id;
     remember(GESTURE_MAP_STORAGE_KEY, this.gestureMap.id);
-    this.guide.render(this.keyName, this.gestureMap);
-    this.help.render(this.gestureMap);
+    this.refreshHelp();
   }
 
   /** Switches between chords and a single note. */
@@ -302,6 +300,7 @@ export class GestureSynthApp {
     this.synth.stop();
     this.stabilizer.reset();
     this.mono.reset();
+    this.refreshHelp();
   }
 
   /** Switches how the mono voice follows the pitch hand. */
@@ -317,19 +316,24 @@ export class GestureSynthApp {
     this.mono.reset();
   }
 
+  /** Re-renders the two places that describe what the hands do. */
+  private refreshHelp(): void {
+    this.guide.render(this.mode, this.keyName, this.gestureMap);
+    this.help.render(this.mode, this.keyName, this.gestureMap);
+  }
+
   /**
    * Shows only the controls the current mode uses.
    *
    * The chord vocabulary and the mono style are alternatives, so they share one
-   * slot in the stack. The chord cheat sheet is hidden in mono mode for the same
-   * reason: it would describe shapes that do nothing there.
+   * slot in the stack. The guide stays available in both modes — it describes
+   * the left hand either way, just differently.
    */
   private applyModeVisibility(): void {
     const isMono = this.mode === "mono";
 
     this.els.gestureMapSelect.classList.toggle("hidden", isMono);
     this.els.monoStyleSelect.classList.toggle("hidden", !isMono);
-    this.guide.setEnabled(!isMono);
   }
 
   /** The mono style's label, read from the picker so the two cannot drift. */

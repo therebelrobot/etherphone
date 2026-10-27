@@ -1,20 +1,46 @@
 /**
- * The on-screen cheat sheet: one row per scale degree the active gesture map can
- * reach, showing the note name in the current key and the hand shape that
- * selects it.
+ * The on-screen cheat sheet: what the left hand is doing, for the mode it is in.
  *
- * It renders from the map rather than a fixed list, so it cannot drift from the
- * instrument: a map with three chords gets three rows.
+ * In Chords mode it lists the scale degrees the active gesture map can reach and
+ * the hand shape that selects each. In Mono mode it is a ladder of the notes the
+ * pitch hand can reach, highest at the top so it reads the way the frame does.
+ *
+ * Both are rendered from the same data the instrument plays from, so the cheat
+ * sheet cannot describe a vocabulary the instrument is not using.
  */
 import { MAJOR_SCALE } from "../config/music";
 import { describeShape, getGestureRows } from "../music/gesture-map";
-import type { GestureMap, KeyName } from "../types";
+import { monoGuideNotes } from "../music/mono";
+import type { GestureMap, InstrumentMode, KeyName } from "../types";
+
+/** One row of the chord cheat sheet. */
+export interface ChordGuideRow {
+  readonly note: string;
+  readonly gesture: string;
+}
+
+/** The chord rows for a key and map, in scale order. */
+export function chordGuideRows(keyName: KeyName, map: GestureMap): ChordGuideRow[] {
+  const scale = MAJOR_SCALE[keyName];
+
+  return getGestureRows(map).map(({ degree, shape }) => ({
+    note: scale[degree - 1],
+    gesture: describeShape(shape),
+  }));
+}
+
+/** The mono rows for a key, highest note first. */
+export function monoGuideRows(keyName: KeyName): string[] {
+  return monoGuideNotes(keyName);
+}
 
 export class GestureGuide {
-  /** Whether the guide applies at all — it does not in mono mode. */
-  private enabled = true;
   /** Whether the player has it open, remembered across mode switches. */
   private opened = false;
+
+  private keyName: KeyName = "A";
+  private mode: InstrumentMode = "chord";
+  private map: GestureMap | null = null;
 
   constructor(
     private readonly root: HTMLElement,
@@ -23,20 +49,39 @@ export class GestureGuide {
     this.toggle.addEventListener("click", () => this.toggleVisibility());
   }
 
-  /** Re-renders the rows for a key's scale and the map that is in play. */
-  render(keyName: KeyName, map: GestureMap): void {
-    const scale = MAJOR_SCALE[keyName];
+  /** Re-renders for the mode, key, and map in play. */
+  render(mode: InstrumentMode, keyName: KeyName, map: GestureMap): void {
+    this.mode = mode;
+    this.keyName = keyName;
+    this.map = map;
+    this.paint();
+  }
 
-    this.root.innerHTML = getGestureRows(map)
+  private paint(): void {
+    if (this.mode === "mono") {
+      this.root.innerHTML = monoGuideRows(this.keyName)
+        .map(
+          (note) => `
+      <div class="gesture-guide-row">
+        <span class="gesture-guide-pitch">${note}</span>
+      </div>
+    `,
+        )
+        .join("");
+      return;
+    }
+
+    const rows = this.map ? chordGuideRows(this.keyName, this.map) : [];
+    this.root.innerHTML = rows
       .map(
-        ({ degree, shape }) => `
+        ({ note, gesture }) => `
       <div class="gesture-guide-row">
         <span class="gesture-guide-note">
-          ${scale[degree - 1]}
+          ${note}
         </span>
 
         <span class="gesture-guide-gesture">
-          ${describeShape(shape)}
+          ${gesture}
         </span>
       </div>
     `,
@@ -44,26 +89,9 @@ export class GestureGuide {
       .join("");
   }
 
-  /**
-   * Shows or hides the whole guide, toggle included.
-   *
-   * The chord vocabulary is meaningless while the instrument is playing single
-   * notes, so mono mode disables the guide rather than leaving a cheat sheet up
-   * that describes shapes nothing responds to.
-   */
-  setEnabled(enabled: boolean): void {
-    this.enabled = enabled;
-    this.toggle.classList.toggle("hidden", !enabled);
-    this.applyVisibility();
-  }
-
   private toggleVisibility(): void {
     this.opened = !this.opened;
-    this.applyVisibility();
+    this.root.classList.toggle("hidden", !this.opened);
     this.toggle.textContent = this.opened ? "Close Guide" : "Open Guide";
-  }
-
-  private applyVisibility(): void {
-    this.root.classList.toggle("hidden", !this.enabled || !this.opened);
   }
 }

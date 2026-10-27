@@ -66,49 +66,68 @@
 
           <h2>Etherphone Guide</h2>
           <p>
-            Etherphone is a gesture-controlled live instrument: your hands choose the chord, the
-            voicing, and the expression. It is built on
+            Etherphone is a gesture-controlled live instrument: your hands choose the notes and the
+            expression, and nothing is played with a mouse. It is built on
             <a href="https://github.com/ericwei97-cloud/gesture-synth">Gesture Synth</a> by
-            <a href="https://indecisiveeric.com">Eric Wei</a>, and the gesture language below is
-            his.
+            <a href="https://indecisiveeric.com">Eric Wei</a>, whose chord vocabulary is the default
+            <i>Classic</i> map.
           </p>
 
-          <h3>Instruments</h3>
+          <h3>Two modes</h3>
+          <p>The picker at the top switches between them, and the choice is remembered.</p>
           <p>
-            The picker holds every instrument: the synths, a set of wavetables, and two sampled
-            instruments. <b>Load Wavetable…</b> reads a single-cycle <code>.wav</code> and rebuilds
-            it as a playable table; <b>Load Sample…</b> reads any recording and pitches it across
-            the keyboard. Both add the file to the picker and switch to it.
+            <b>Chords</b> — the left hand picks a chord and the right hand voices it. This is what
+            the instrument did first.<br />
+            <b>Mono</b> — the left hand plays one note at a time, so you can play a melody, a lead
+            line, or a bassline.
+          </p>
+          <p>
+            The right hand does the same job in both: it is always the <i>how it sounds</i> hand.
           </p>
 
-          <h3>Left Hand</h3>
+          <h3>The gesture menu</h3>
           <p>
+            <b>Close both hands</b> for a moment and a menu fans out around them, so you can change
+            a setting without reaching for the mouse. Push your hand outwards towards an option to
+            highlight it, and hold it there — a ring fills, and the choice commits when it closes.
+            <b>Close both hands again</b> to dismiss the menu without choosing anything.
+          </p>
+
+          <h3 data-mode="chord">Left Hand — Chords</h3>
+          <p data-mode="chord">
             <b>Tilt</b><br />
             Inward → Major<br />
             Outward → Minor
           </p>
 
-          <p>
+          <p data-mode="chord">
             <b>Fingers (Scale Degree)</b><br />
-            These follow the selected <b>gesture map</b>. The default, <i>Classic</i>, is the
-            vocabulary inherited from Gesture Synth; <i>Triad</i> and <i>Pentatonic</i> are smaller
-            sets. The on-screen guide always shows the active map.
+            These follow the selected <b>gesture map</b>. <i>Classic</i> is the vocabulary inherited
+            from Gesture Synth; <i>Triad</i> and <i>Pentatonic</i> are smaller sets. The on-screen
+            guide always shows the active map.
           </p>
-          <div id="helpGestureRows"></div>
+          <div id="helpGestureRows" data-mode="chord"></div>
+
+          <h3 data-mode="mono">Left Hand — Mono</h3>
+          <p data-mode="mono">
+            <b>Height (Pitch)</b><br />
+            Higher in the frame → higher note. The notes are always in the selected key, over two
+            octaves. The on-screen guide lists them, highest at the top.
+          </p>
+
+          <p data-mode="mono">
+            <b>Style</b><br />
+            <i>Quantised</i> snaps to the nearest note and holds it.<br />
+            <i>Glide</i> slides continuously between notes.<br />
+            <i>Harp</i> plucks a fresh note as your hand moves from one to the next, so a sweep
+            across the frame plays a run.
+          </p>
 
           <h3>Right Hand</h3>
           <p>
-            <b>Fingers (Chord Quality)</b><br />
-            1 → Root Position<br />
-            2 → 1st Inversion<br />
-            3 → Major/Minor 7th<br />
-            4 → Dominant/Diminished 7th
-          </p>
-
-          <p>
-            <b>Octave</b><br />
-            Thumb In → higher octave<br />
-            Thumb Out → lower octave
+            <b>Height</b><br />
+            Higher → Louder<br />
+            Lower → Softer
           </p>
 
           <p>
@@ -118,9 +137,25 @@
           </p>
 
           <p>
-            <b>Height</b><br />
-            Higher → Louder<br />
-            Lower → Softer
+            <b>Octave</b><br />
+            Thumb In → higher octave<br />
+            Thumb Out → lower octave
+          </p>
+
+          <p data-mode="chord">
+            <b>Fingers (Chord Quality)</b><br />
+            1 → Root Position<br />
+            2 → 1st Inversion<br />
+            3 → Major/Minor 7th<br />
+            4 → Dominant/Diminished 7th
+          </p>
+
+          <h3>Instruments</h3>
+          <p>
+            The picker holds every instrument: the synths, a set of wavetables, and two sampled
+            instruments. <b>Load Wavetable…</b> reads a single-cycle <code>.wav</code> and rebuilds
+            it as a playable table; <b>Load Sample…</b> reads any recording and pitches it across
+            the keyboard. Both add the file to the picker and switch to it.
           </p>
 
           <a

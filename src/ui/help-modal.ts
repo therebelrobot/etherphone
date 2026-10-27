@@ -2,12 +2,14 @@
  * The "how to play" modal, opened by the `?` button and dismissed by the close
  * button or by clicking the backdrop.
  *
- * The chord rows are rendered from the active gesture map rather than written
- * into the markup, for the same reason the on-screen guide is: the help text
- * must not describe a vocabulary the instrument is not currently using.
+ * The prose lives in `index.html`, but the parts that are only true in one mode
+ * are marked with `data-mode` and filtered here. That matters because the
+ * instrument does different things with the same hand depending on the mode, and
+ * a guide that describes the wrong one is worse than no guide at all. The chord
+ * rows are rendered from the active gesture map for the same reason.
  */
-import { describeShape, getGestureRows } from "../music/gesture-map";
-import type { GestureMap } from "../types";
+import { chordGuideRows } from "./gesture-guide";
+import type { GestureMap, InstrumentMode, KeyName } from "../types";
 
 export class HelpModal {
   constructor(
@@ -30,14 +32,18 @@ export class HelpModal {
     });
   }
 
-  /** Re-renders the left-hand chord rows against the map that is in play. */
-  render(map: GestureMap): void {
-    this.chordRows.innerHTML = getGestureRows(map)
+  /** Re-renders for the mode, key, and map in play. */
+  render(mode: InstrumentMode, keyName: KeyName, map: GestureMap): void {
+    for (const element of this.modal.querySelectorAll<HTMLElement>("[data-mode]")) {
+      element.classList.toggle("hidden", element.dataset.mode !== mode);
+    }
+
+    this.chordRows.innerHTML = chordGuideRows(keyName, map)
       .map(
-        ({ numeral, shape }) => `
+        ({ note, gesture }) => `
         <div class="help-row">
-          <span class="help-row-gesture">${describeShape(shape)}</span>
-          <span class="help-row-result">${numeral}</span>
+          <span class="help-row-gesture">${gesture}</span>
+          <span class="help-row-result">${note}</span>
         </div>
       `,
       )

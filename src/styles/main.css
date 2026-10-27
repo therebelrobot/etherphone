@@ -185,6 +185,12 @@ body {
   font-size: 20px;
 }
 
+.gesture-guide-pitch {
+  color: #e8a13d;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* ---- Readouts ---- */
 
 #chordDisplay {
