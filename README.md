@@ -449,6 +449,11 @@ it over, and the menu then offers **Mute** (drop it out and back in without stop
 are deliberately a second step — and a cancelled rewrite puts back the take it displaced
 rather than losing it. The buttons under the transport mute a layer in one click.
 
+**Stop never costs a take.** A recording it catches part-way is _closed_ where it is
+rather than discarded — a partial take is a perfectly good one, since its last note holds
+to the end of the loop — and only Clear, Rewrite, and switching mode mid-recording discard
+anything.
+
 ![Two layers looping: a chord bed and a melody](docs/screenshots/loop-tracks/02-two-layers.png)
 
 The lanes are the loop: one per layer, its notes as blocks along the bar, and a

@@ -208,10 +208,19 @@ export class Looper {
     this.lastPlayedBeat = -EPSILON;
   }
 
-  /** Stops the clock and any recording, dropping a layer that never existed. */
+  /**
+   * Stops the clock.
+   *
+   * A recording in progress is **closed and kept** — Stop is a transport move,
+   * and it must never be able to destroy what was just played. Playing nothing
+   * is the one case that leaves nothing behind. An *arm* that never became a
+   * recording has nothing in it at all, so that simply goes.
+   */
   stop(): void {
+    if (this.recording !== null) this.closeRecording();
+    else if (this.armed !== null) this.abandonRecording();
+
     this.transport.stop();
-    this.abandonRecording();
   }
 
   /**
@@ -226,7 +235,8 @@ export class Looper {
 
   /** Forgets every layer. */
   clear(): void {
-    this.stop();
+    this.transport.stop();
+    this.abandonRecording();
     this.tracksValue.clear();
   }
 
@@ -302,7 +312,7 @@ export class Looper {
     }
 
     if (this.recording !== null && this.recordedBeats(ctxTime) >= this.transport.loopBeats) {
-      this.finishRecording();
+      this.closeRecording();
     }
 
     return this.dueHits(ctxTime);
@@ -358,7 +368,14 @@ export class Looper {
     this.armed = null;
   }
 
-  private finishRecording(): void {
+  /**
+   * Ends a recording and keeps what was played.
+   *
+   * Reached both by the loop running its length and by Stop arriving early —
+   * "that is enough, close it here". A partial take is a perfectly good one: the
+   * last note holds to the end of the loop, so nothing sounds unfinished.
+   */
+  private closeRecording(): void {
     const recording = this.recording;
     if (!recording) return;
 
@@ -367,11 +384,32 @@ export class Looper {
       loopBeats: this.transport.loopBeats,
     });
 
+    if (take.events.length === 0) {
+      // Nothing was played, so nothing has changed: put back whatever the
+      // rewrite displaced, or forget a layer with nothing in it.
+      this.restoreOrDrop(recording);
+      return;
+    }
+
     const existing = this.tracksValue.get(recording.trackId);
     if (existing) this.tracksValue.set(recording.trackId, { ...existing, take });
 
     this.recording = null;
     this.displaced = null;
+  }
+
+  /** Undoes a recording that turned out to contain nothing. */
+  private restoreOrDrop(recording: Recording): void {
+    this.recording = null;
+
+    if (this.displaced?.trackId === recording.trackId) {
+      const track = this.tracksValue.get(recording.trackId);
+      if (track) this.tracksValue.set(recording.trackId, { ...track, take: this.displaced.take });
+      this.displaced = null;
+      return;
+    }
+
+    this.tracksValue.delete(recording.trackId);
   }
 
   /**

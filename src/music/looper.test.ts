@@ -309,6 +309,59 @@ describe("clearing", () => {
   });
 });
 
+describe("stopping mid-recording", () => {
+  it("closes the recording and keeps what was played", () => {
+    const { looper } = rig();
+
+    looper.record(0, "chord");
+    ticks(looper, [1, 2]);
+    looper.capture(I_CHORD, 0.8, 0, 2);
+    ticks(looper, [2.5]);
+
+    // Stop arrives well before the loop is up. That is "close it here", not
+    // "throw it away": a transport move must never destroy a take.
+    looper.stop();
+
+    expect(looper.tracks).toHaveLength(1);
+    expect(looper.tracks[0].take?.events.map((event) => event.beat)).toEqual([0]);
+    expect(looper.state).toBe("idle");
+    expect(looper.hasTake).toBe(true);
+  });
+
+  it("keeps the earlier take when a rewrite is stopped before playing anything", () => {
+    const { looper } = rig();
+    recordChords(looper);
+    const chords = idOf(looper, "Chords 1");
+
+    looper.rewrite(20, chords);
+    ticks(looper, [20.5, 21, 21.5, 22]); // the recording starts, displacing the take
+    looper.stop();
+
+    expect(looper.tracks).toHaveLength(1);
+    expect(looper.tracks[0].take?.events.map((event) => event.beat)).toEqual([0, 2]);
+  });
+
+  it("leaves nothing behind for a layer that was stopped before playing", () => {
+    const { looper } = rig();
+
+    looper.record(0, "chord");
+    ticks(looper, [1, 2]); // the recording begins, but nothing is played
+    looper.stop();
+
+    expect(looper.tracks).toHaveLength(0);
+    expect(looper.state).toBe("idle");
+  });
+
+  it("leaves nothing behind for an arm that never became a recording", () => {
+    const { looper } = rig();
+
+    looper.record(0, "chord");
+    looper.stop();
+
+    expect(looper.tracks).toHaveLength(0);
+  });
+});
+
 describe("stop and play", () => {
   it("stops without forgetting the layers, then replays from the top", () => {
     const { looper } = rig();
