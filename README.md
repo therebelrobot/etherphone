@@ -43,26 +43,30 @@ records what the hands meant and plays it back as layers — a chord bed with a 
 over it — that can be dropped out and brought back mid-performance. Chords, Mono, and
 every setting are reachable by gesture, without the mouse.
 
-What is still missing is rhythm, the microphone, and a way to record a finished
-performance to a file.
+What is still missing is rhythm, the microphone, a way to take a loop away with you, and a
+way to record a finished performance to a file.
 
-The gap is mapped, not guessed. The open RFCs describe six changes to the
-instrument, plus two to what happens after it is played:
+The gap is mapped, not guessed. The RFCs group the work into waves, and the first two are
+in:
 
 ```
-Wave 1  Control plane   hands drive the interface          RFCs #4, #8
-Wave 2  The spine       musical modes + a shared clock     RFCs #7, #2
+Wave 1  Control plane   hands drive the interface          RFCs #4, #8      landed
+Wave 2  The spine       musical modes + a shared clock     RFCs #7, #2      landed
 Wave 3  Layers          voice, tuning, percussion          RFCs #9, #11, #10
         Capture         a take you can actually post       RFC #12
 ```
 
-| Wave                  | What it unlocks                                                                                        | Why it is in this order                                                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1 — Control plane** | Gesture-driven menu navigation (#4) and remappable gesture maps (#8)                                   | Every later feature adds a control. If the only way to reach one is a `<select>`, the stop-and-click problem gets worse with each wave.                       |
-| **2 — The spine**     | A monophonic voice for melody, lead, and bass (#7), and the recorder/looper with a real transport (#2) | The looper owns tempo and time. The mono voice forces the app to stop assuming that "musical intent" means "a chord". Everything after this is built on both. |
-|                       | _Both landed: Mono (#7) and the looper with its shared clock and layers (#2)._                         |                                                                                                                                                               |
-| **3 — Layers**        | Microphone looping (#9), tuned voice loops (#11), and percussion (#10)                                 | These are layers on the spine: same clock, same loop windows, same gesture control. Designing them against three separate clocks would be a mistake.          |
-| **Capture**           | Render a performance — audio, and ideally the video overlay — to a file ready to post                  | The thing that makes it "perform into recording". It taps the master bus, so the loops, voice, and drums of the waves above arrive in the same mix for free.  |
+| Wave                  | State      | What it unlocks                                                                                        | Why it is in this order                                                                                                                                       |
+| --------------------- | ---------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 — Control plane** | **Landed** | Gesture-driven menu navigation (#4) and remappable gesture maps (#8)                                   | Every later feature adds a control. If the only way to reach one is a `<select>`, the stop-and-click problem gets worse with each wave.                       |
+| **2 — The spine**     | **Landed** | A monophonic voice for melody, lead, and bass (#7), and the recorder/looper with a real transport (#2) | The looper owns tempo and time. The mono voice forces the app to stop assuming that "musical intent" means "a chord". Everything after this is built on both. |
+| **3 — Layers**        | Open       | Microphone looping (#9), tuned voice loops (#11), and percussion (#10)                                 | These are layers on the spine: same clock, same loop windows, same gesture control. Designing them against three separate clocks would be a mistake.          |
+| **Capture**           | Open       | Render a performance — audio, and ideally the video overlay — to a file ready to post                  | The thing that makes it "perform into recording". It taps the master bus, so the loops, voice, and drums of the waves above arrive in the same mix for free.  |
+
+A wave landing is not an RFC closing. Each of the first two is still open for what was
+deliberately left out: the gesture-map **editor** (#8) and the control-mode guide (#4),
+mono articulation and a harp pluck (#7), and the looper's **overdub**, **per-layer gain**
+and **export** (#2).
 
 The umbrella issue is [#1, "Etherphone as a performance machine"](https://github.com/therebelrobot/etherphone/issues/1).
 The RFCs are deliberately written as _requests for comments_ — a problem, a direction,
@@ -87,7 +91,7 @@ will load the app but cannot reach the camera.
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
 - Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
 - A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose. It reaches the key, the instrument, the transport, and the layers too
-- A **looper**: record a chord bed, switch to Mono, record a melody over it — and drop either layer out and back in without stopping. It can be turned off entirely in Settings
+- A **looper**: record layers — a chord bed, a melody, a second chord part — drop any of them out and back in without stopping, and redo one by name. It can be turned off entirely in Settings
 - **Transport by fist**: close one hand and flick it — up records, down stops, right plays, left clears
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
@@ -97,6 +101,7 @@ will load the app but cannot reach the camera.
 **Next, in the order the RFCs argue for**
 
 - Build your own gesture map, by gesture rather than by mouse
+- Finish the looper: overdub, per-layer gain, and taking a take away with you
 - Capture the microphone and loop voice as a layer
 - Tune a captured voice loop to the key without changing its timing
 - Percussion: live hits, a step grid, and possibly a small pattern notation
