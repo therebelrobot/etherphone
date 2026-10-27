@@ -76,6 +76,7 @@ body {
 /* ---- Controls ---- */
 
 #keySelect,
+#gestureMapSelect,
 #instrumentSelect,
 .load-button,
 #guideToggle {
@@ -95,16 +96,20 @@ body {
   top: 12px;
 }
 
-#instrumentSelect {
+#gestureMapSelect {
   top: 48px;
 }
 
-#loadWavetable {
+#instrumentSelect {
   top: 84px;
 }
 
-#loadSample {
+#loadWavetable {
   top: 120px;
+}
+
+#loadSample {
+  top: 156px;
 }
 
 .load-button {
@@ -112,7 +117,7 @@ body {
 }
 
 #guideToggle {
-  top: 156px;
+  top: 192px;
   cursor: pointer;
 }
 
@@ -135,7 +140,7 @@ body {
 
 #gestureGuide {
   position: absolute;
-  top: 194px;
+  top: 230px;
   left: 12px;
   display: flex;
   flex-direction: column;
