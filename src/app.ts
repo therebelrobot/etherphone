@@ -69,9 +69,12 @@ import {
 } from "./vision/gestures";
 import { createHandLandmarker } from "./vision/hand-tracking";
 import { drawFrame, landmarkToCanvas } from "./vision/overlay";
+import { TransportGesture } from "./vision/transport-gesture";
+import type { TransportCommand } from "./vision/transport-gesture";
 import { drawEnergy } from "./visuals/energy";
 import { drawLoopTracks, trackSegments } from "./visuals/loop-tracks";
 import type { TrackLane } from "./visuals/loop-tracks";
+import { drawTransportCue } from "./visuals/transport-cue";
 
 /** The id of the one-handed toggle, which is not a mode or a value. */
 const ONE_HANDED_ID = "one-handed";
@@ -160,6 +163,12 @@ export class GestureSynthApp {
 
   /** Whether the gesture menu owns the frame. */
   private readonly menu = new MenuController();
+
+  /** The fast transport: one fist, flicked in a direction. */
+  private readonly transportGesture = new TransportGesture();
+
+  /** Where the fist cue should be drawn this frame, or `null`. */
+  private transportCue: { point: CanvasPoint; readyForMs: number } | null = null;
 
   constructor() {
     this.els = getAppElements();
@@ -658,6 +667,8 @@ export class GestureSynthApp {
       }
 
       this.updateFrame(now);
+      // The cue is drawn last so it sits over the ribbon and the loop's lanes.
+      this.renderTransportCue();
       requestAnimationFrame(tick);
     };
 
@@ -693,7 +704,16 @@ export class GestureSynthApp {
 
     // The menu takes the whole frame when it is up: opening it is a deliberate
     // pause, so nothing *played* sounds underneath it.
-    if (this.updateControlMenu(now, Left, Right)) return;
+    if (this.updateControlMenu(now, Left, Right)) {
+      // The transport stands aside for it: both fists are the menu's own
+      // gesture, so a flick while it is up would be a guess about which one the
+      // player meant.
+      this.transportGesture.reset();
+      this.transportCue = null;
+      return;
+    }
+
+    this.updateTransportGesture(now, Left, Right);
 
     // Expression follows the right hand in both modes: it is the "how it
     // sounds" hand, whether the left hand is playing chords or a melody.
@@ -883,6 +903,68 @@ export class GestureSynthApp {
     this.hud.setQuality(this.monoStyleLabel, false);
     // One ribbon line, coloured by the degree the note sits on.
     drawEnergy(this.els.ctx, volume, 1, tilt, monoNumeral(reading));
+  }
+
+  /**
+   * The fast transport: one fist, flicked in a direction.
+   *
+   * Two closed hands is the menu's own gesture, so a fist is read only while the
+   * *other* hand is open. That single rule is what keeps the two closed-hand
+   * meanings from ever colliding: one fist is a transport, two is the menu.
+   *
+   * The cue is stashed rather than drawn, so it can be put on top of everything
+   * else once the frame is complete.
+   */
+  private updateTransportGesture(now: number, left: Hand | null, right: Hand | null): void {
+    // One-handed staging hands the closed hand to the menu, so the fist has
+    // nothing left to mean here.
+    if (this.singleHanded) {
+      this.transportGesture.reset();
+      this.transportCue = null;
+      return;
+    }
+
+    const leftClosed = left !== null && isHandClosed(left);
+    const rightClosed = right !== null && isHandClosed(right);
+
+    const fist = leftClosed !== rightClosed ? (leftClosed ? left : right) : null;
+    const reading = this.transportGesture.update(fist, now);
+
+    const point = reading.ready && fist ? this.cursorFor(fist) : null;
+    this.transportCue = point ? { point, readyForMs: reading.readyForMs } : null;
+
+    if (reading.command !== null) this.runTransportCommand(reading.command);
+  }
+
+  /** Draws the fist cue, if one is waiting. */
+  private renderTransportCue(): void {
+    const cue = this.transportCue;
+    if (!cue) return;
+
+    drawTransportCue(this.els.ctx, {
+      point: cue.point,
+      readyForMs: cue.readyForMs,
+      canvasWidth: this.els.canvas.width,
+      canvasHeight: this.els.canvas.height,
+    });
+  }
+
+  /** Sends a flicked command to the looper. */
+  private runTransportCommand(command: TransportCommand): void {
+    switch (command) {
+      case "record":
+        this.recordLoop();
+        return;
+      case "play":
+        this.playLoop();
+        return;
+      case "stop":
+        this.stopLoop();
+        return;
+      case "clear":
+        this.clearLoop();
+        return;
+    }
   }
 
   /**

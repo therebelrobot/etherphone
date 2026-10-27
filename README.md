@@ -88,6 +88,7 @@ will load the app but cannot reach the camera.
 - Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
 - A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose. It reaches the key, the instrument, the transport, and the layers too
 - A **looper**: record a chord bed, switch to Mono, record a melody over it — and drop either layer out and back in without stopping
+- **Transport by fist**: close one hand and flick it — up records, down stops, right plays, left clears
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -162,6 +163,8 @@ src/
     hand-tracking.ts       MediaPipe HandLandmarker construction.
     gestures.ts            Landmark interpretation: finger extension, tilt, volume,
                            chord classification. Pure functions, no DOM.
+    transport-gesture.ts   The transport, by fist: a closed hand flicked a direction
+                           records, plays, stops, or clears.
     overlay.ts             Cover-crop maths and canvas frame drawing.
 
   music/
@@ -206,6 +209,7 @@ src/
     energy.ts              The jittering "energy ribbon" behind the chord readout.
     loop-tracks.ts         The loop's layers as lanes along the bar, with a playhead:
                            what is on the loop, and which parts are dropped out.
+    transport-cue.ts       The four labelled arrows drawn around a waiting fist.
 
   ui/
     dom.ts                 The full list of ids and classes the app expects.
@@ -447,6 +451,33 @@ Under it all is `Transport` (`src/audio/transport.ts`): tempo and bar lines, cou
 beats against the `AudioContext`'s own clock rather than the frame loop, so the grid
 does not drift when inference is heavy. The looper owns no clock of its own, and
 neither will the percussion sequencer — that is the point of it being its own module.
+
+#### The transport, by fist
+
+The menu is _deliberate_ — open it, pick Transport, dwell on an option — which is right
+for a setting and far too slow for a transport you reach for mid-phrase. So the transport
+gets a fast path: **close one hand and flick it**.
+
+![The fist cue: Rec above, Play to the right, Stop below, Clear to the left](docs/screenshots/transport-gestures/01-fist-cue.png)
+
+```
+           ↑ Record
+    ← Clear      → Play
+           ↓ Stop
+```
+
+A closed hand is the right modifier because it is already **silent** in both modes — a
+closed chord hand chooses no chord, a closed voicing hand sounds nothing — so holding one
+can never cost a note, and it cannot be mistaken for playing. One flick is one command;
+the hand has to open before it will fire again. Two closed hands is still the menu, which
+is what keeps the two meanings of a closed hand from ever colliding.
+
+The commands are drawn around the fist while it waits, fading in as the hand settles:
+a gesture vocabulary nobody can see is one nobody uses. It is also in the help modal.
+
+Two things worth knowing: **Clear is immediate** — it is one flick, not a confirmation —
+and the fist gestures are off in one-handed staging, where a closed hand already means
+the menu.
 
 ### Instruments
 
