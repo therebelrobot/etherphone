@@ -94,8 +94,11 @@ will load the app but cannot reach the camera.
 - The **expression hand** chooses the voicing and the expression
 - Either hand can be the chord hand, and each keeps its own gesture map
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
-- **Build your own map**: seven shapes, each set to a degree or to nothing, edited from
-  the menu and shareable as a link. The cheat sheet lists the silent shapes too
+- **Build your own map**: seven shapes, each set to a degree, to nothing, or to **Modifier**
+  (a shape that transposes the next chord). Edited from the menu and shareable as a link.
+  The cheat sheet lists the silent shapes too
+- **Either hand can be the chord hand**, and each hand keeps its own map, so swapping does
+  not throw a vocabulary away
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
 - Three mono styles — quantised, glide, and harp, which now plucks and decays like a string
 - Mono expression on the right hand: height is volume, tilt is filter, thumb drops an
@@ -112,6 +115,8 @@ will load the app but cannot reach the camera.
   rather than on whichever frame noticed it
 - Save a take to a file and load it back; the tempo, loop length, and per-layer mix travel
   with it
+- **Render the loop to a WAV** offline — faster than real time, independent of the tab, and
+  transposed to whatever key is selected
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API

@@ -14,6 +14,12 @@ Each entry is marked one of three ways:
 
 Last reviewed: 2026-10-28.
 
+Three of these were open at the time of writing and are now built: the
+mode-filtered picker (#7), per-hand maps and the modifier shape (#8). The
+offline WAV render that #2 lists under Persistence is also built — in
+`src/audio/render.ts`, so #12 can call the same renderer rather than write a
+second one.
+
 ---
 
 ## #1 — Etherphone as a performance machine
