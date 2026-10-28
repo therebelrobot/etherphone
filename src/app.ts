@@ -1176,7 +1176,7 @@ export class GestureSynthApp {
     );
 
     if (this.mode === "mono") {
-      this.updateMonoFrame(Left, volume, tilt, ctxTime);
+      this.updateMonoFrame(Left, Right, volume, tilt, ctxTime);
       return;
     }
 
@@ -1345,11 +1345,20 @@ export class GestureSynthApp {
    * There is no chord to stabilise here — the note is simply wherever the hand
    * is — so this reads the frame directly rather than through the stabiliser.
    */
-  private updateMonoFrame(left: Hand | null, volume: number, tilt: number, ctxTime: number): void {
+  private updateMonoFrame(
+    left: Hand | null,
+    right: Hand | null,
+    volume: number,
+    tilt: number,
+    ctxTime: number,
+  ): void {
+    // The thumb is read from the expression hand even in mono, where there is
+    // no voicing for it to drop: it becomes the octave for a bassline instead.
     const reading = this.mono.update(
       left ? getHandHeight(left) : null,
       this.monoStyle,
       this.tonicFrequency,
+      right !== null && isThumbExtended(right, "Right"),
     );
 
     // A recorded melody is its degrees, not its frequencies, so it transposes

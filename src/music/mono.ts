@@ -116,8 +116,20 @@ export class MonoReader {
     this.lastDegree = null;
   }
 
-  /** Reads one frame. Returns `null` when there is no pitch hand. */
-  update(height: number | null, style: MonoStyle, tonicFrequency: number): MonoReading | null {
+  /**
+   * Reads one frame. Returns `null` when there is no pitch hand.
+   *
+   * `octaveDown` drops the whole reading an octave, which is the bassline case:
+   * the same hand positions, one register lower. It is the expression hand's
+   * thumb, the same control that drops a chord voicing — the instrument should
+   * not have two different "make it lower" gestures.
+   */
+  update(
+    height: number | null,
+    style: MonoStyle,
+    tonicFrequency: number,
+    octaveDown = false,
+  ): MonoReading | null {
     if (height === null) {
       this.lastDegree = null;
       return null;
@@ -129,11 +141,13 @@ export class MonoReader {
 
     this.lastDegree = degree;
 
+    const raw =
+      style === "glide"
+        ? frequencyAtPosition(position, tonicFrequency)
+        : frequencyForDegree(degree, tonicFrequency);
+
     return {
-      frequency:
-        style === "glide"
-          ? frequencyAtPosition(position, tonicFrequency)
-          : frequencyForDegree(degree, tonicFrequency),
+      frequency: octaveDown ? raw / 2 : raw,
       degree,
       octave: Math.floor((degree - 1) / 7),
       isNewDegree,

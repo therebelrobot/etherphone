@@ -105,6 +105,28 @@ describe("MonoReader", () => {
     expect(reading?.frequency).toBeCloseTo(frequencyForDegree(1, C4), 5);
   });
 
+  it("drops the whole reading an octave when the thumb asks for it", () => {
+    // The bassline case: the same hand positions, one register lower.
+    const reading = new MonoReader().update(heightForPosition(1.4), "quantised", C4, true);
+
+    expect(reading?.frequency).toBeCloseTo(frequencyForDegree(1, C4) / 2, 5);
+    // The degree is unchanged: it is the register that moved, not the note.
+    expect(reading?.degree).toBe(1);
+  });
+
+  it("drops a glide too, so the octave control does not break the slide", () => {
+    const plain = new MonoReader().update(heightForPosition(1.4), "glide", C4);
+    const dropped = new MonoReader().update(heightForPosition(1.4), "glide", C4, true);
+
+    expect(dropped?.frequency).toBeCloseTo((plain?.frequency ?? 0) / 2, 5);
+  });
+
+  it("is unchanged when the thumb is not extended", () => {
+    const plain = new MonoReader().update(heightForPosition(1.4), "quantised", C4, false);
+
+    expect(plain?.frequency).toBeCloseTo(frequencyForDegree(1, C4), 5);
+  });
+
   it("slides between degrees when gliding", () => {
     const reading = new MonoReader().update(heightForPosition(1.4), "glide", C4);
 
