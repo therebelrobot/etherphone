@@ -45,5 +45,11 @@ jobs:
       - name: Test
         run: npm run coverage
 
+      # RFC #11's substrate decision (plain JS, not WASM) rested on numbers that
+      # lived only in the issue. This re-derives them, and fails if the
+      # detection or the shift stops being correct.
+      - name: Benchmark the pitch-shift substrate
+        run: npm run benchmark:pitch-shift
+
       - name: Build
         run: npm run build
