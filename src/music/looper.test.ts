@@ -636,3 +636,77 @@ describe("scheduling ahead", () => {
     );
   });
 });
+
+describe("overdubbing", () => {
+  it("keeps the layer sounding while the new pass is recorded", () => {
+    const { looper } = rig();
+    recordChords(looper);
+    const chords = idOf(looper, "Chords 1");
+
+    looper.overdub(20, chords);
+
+    // The whole point: you play along with what you are adding to.
+    expect(looper.tracks[0].take).not.toBeNull();
+    expect(looper.tracks[0].take?.events.length).toBeGreaterThan(0);
+  });
+
+  it("adds the new pass to the take instead of replacing it", () => {
+    const { looper } = rig();
+    recordChords(looper);
+    const chords = idOf(looper, "Chords 1");
+    const before = looper.tracks[0].take?.events.length ?? 0;
+
+    // Armed at 20s: a bar line at 22s, then a pass over the top.
+    // Beat 4 of the loop: clear of the I on 0 and the V on 2, so this adds
+    // rather than landing on top of one of them.
+    looper.overdub(20, chords);
+    ticks(looper, [21, 22]);
+    looper.capture(C_NOTE, 0.5, 0, 24);
+    ticks(looper, [26]);
+
+    expect(looper.tracks[0].take?.events.length).toBe(before + 1);
+  });
+
+  it("leaves the layer alone when the pass plays nothing", () => {
+    const { looper } = rig();
+    recordChords(looper);
+    const chords = idOf(looper, "Chords 1");
+    const before = looper.tracks[0].take?.events;
+
+    looper.overdub(20, chords);
+    ticks(looper, [21, 22, 26]);
+
+    expect(looper.tracks[0].take?.events).toEqual(before);
+  });
+
+  it("refuses to overdub a layer that holds nothing", () => {
+    const { looper } = rig();
+    looper.replaceLayers([
+      {
+        label: "Chords 1",
+        mode: "chord",
+        muted: false,
+        take: { bpm: 120, loopBeats: 8, events: [] },
+      },
+    ]);
+
+    looper.overdub(20, looper.tracks[0].id);
+
+    // Nothing to add to, so nothing is armed and the clock stays put.
+    expect(looper.state).toBe("idle");
+  });
+
+  it("still replaces on a rewrite, so the two are not the same control", () => {
+    const { looper } = rig();
+    recordChords(looper);
+    const chords = idOf(looper, "Chords 1");
+    const before = looper.tracks[0].take?.events.length ?? 0;
+
+    looper.rewrite(20, chords);
+    ticks(looper, [21, 22]);
+    looper.capture(C_NOTE, 0.5, 0, 23);
+    ticks(looper, [26]);
+
+    expect(looper.tracks[0].take?.events.length).toBeLessThan(before);
+  });
+});

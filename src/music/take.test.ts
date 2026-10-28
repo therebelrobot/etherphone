@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TakeEvent } from "../types";
-import { resolveTakeEvent, sameIntent } from "./take";
+import { mergeTakes, resolveTakeEvent, sameIntent } from "./take";
 
 /** A tonic that is not one of the three the engine drops an octave. */
 const C4 = 261.63;
@@ -77,5 +77,52 @@ describe("sameIntent", () => {
 
   it("treats every rest as the same rest", () => {
     expect(sameIntent(rest(), rest())).toBe(true);
+  });
+});
+
+describe("mergeTakes", () => {
+  const chord = (beat: number, numeral: "I" | "V") => ({
+    kind: "chord" as const,
+    beat,
+    volume: 0.5,
+    tilt: 0,
+    numeral,
+    isMajorMode: true,
+    qualityIndex: 1,
+    thumbDown: false,
+  });
+
+  const base = { bpm: 100, loopBeats: 8, events: [chord(0, "I"), chord(4, "V")] };
+
+  it("adds the second pass to the first, in beat order", () => {
+    const merged = mergeTakes(base, { ...base, events: [chord(2, "I")] });
+
+    expect(merged.events.map((event) => event.beat)).toEqual([0, 2, 4]);
+  });
+
+  it("drops the added pass's rests, so an overdub never erases what it is not playing", () => {
+    const withRest = {
+      ...base,
+      events: [{ kind: "rest" as const, beat: 2, volume: 0, tilt: 0 }],
+    };
+
+    const merged = mergeTakes(base, withRest);
+
+    expect(merged.events).toHaveLength(2);
+    expect(merged.events.map((event) => event.kind)).toEqual(["chord", "chord"]);
+  });
+
+  it("lets the newer pass win where both play on the same beat", () => {
+    const merged = mergeTakes(base, { ...base, events: [chord(0, "V")] });
+
+    expect(merged.events[0]).toMatchObject({ beat: 0, numeral: "V" });
+    expect(merged.events).toHaveLength(2);
+  });
+
+  it("keeps the base take's grid, since that is what the layer plays against", () => {
+    const merged = mergeTakes(base, { ...base, bpm: 140, loopBeats: 16 });
+
+    expect(merged.bpm).toBe(100);
+    expect(merged.loopBeats).toBe(8);
   });
 });

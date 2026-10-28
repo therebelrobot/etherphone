@@ -151,6 +151,7 @@ const EXPORT_TAKE_ID = "export-take";
 const LAYER_ACTION_MUTE = "mute";
 const LAYER_ACTION_LOUDER = "louder";
 const LAYER_ACTION_QUIETER = "quieter";
+const LAYER_ACTION_OVERDUB = "overdub";
 const LAYER_ACTION_REWRITE = "rewrite";
 const LAYER_ACTION_CLEAR = "clear";
 const LAYERS_BACK_ID = "layers-back";
@@ -709,6 +710,11 @@ export class GestureSynthApp {
   /** Arms a re-recording of one layer, replacing what it holds. */
   private rewriteLoop(id: TrackId): void {
     this.looper.rewrite(this.audioTime(), id);
+  }
+
+  /** Arms a recording that is added to one layer, keeping what it holds. */
+  private overdubLoop(id: TrackId): void {
+    this.looper.overdub(this.audioTime(), id);
   }
 
   /** Throws one layer away, retiring its channel with it. */
@@ -1688,6 +1694,12 @@ export class GestureSynthApp {
               label: "Quieter",
               keepsMenuOpen: true,
             },
+            // Overdub adds a pass; Rewrite replaces the take. Both are offered
+            // because they answer different instincts, and losing a part to the
+            // wrong one is what makes an overdub feature worth having.
+            ...(focused.take
+              ? [{ id: `${focused.id}:${LAYER_ACTION_OVERDUB}`, label: "Overdub" }]
+              : []),
             { id: `${focused.id}:${LAYER_ACTION_REWRITE}`, label: "Rewrite" },
             { id: `${focused.id}:${LAYER_ACTION_CLEAR}`, label: "Clear" },
             { id: LAYERS_BACK_ID, label: "Back", keepsMenuOpen: true },
@@ -1918,6 +1930,10 @@ export class GestureSynthApp {
           return;
         case LAYER_ACTION_QUIETER:
           this.nudgeLayerGain(action.trackId, -1);
+          return;
+        case LAYER_ACTION_OVERDUB:
+          this.layerFocus = null;
+          this.overdubLoop(action.trackId);
           return;
         case LAYER_ACTION_REWRITE:
           this.layerFocus = null;

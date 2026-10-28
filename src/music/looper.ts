@@ -19,6 +19,7 @@
 import type { InstrumentMode, LooperState, Take, TakeEvent } from "../types";
 import type { Transport } from "../audio/transport";
 import { Recorder } from "./recorder";
+import { mergeTakes } from "./take";
 import type { RecordedIntent } from "./recorder";
 
 /** Layers are named, not derived from their mode: there can be several per mode. */
@@ -91,7 +92,7 @@ export function clampGain(gain: number): number {
 }
 
 /** Whether a pending recording fills a new layer or replaces an existing one. */
-export type RecordKind = "new" | "rewrite";
+export type RecordKind = "new" | "rewrite" | "overdub";
 
 /** A recording waiting for its bar line. */
 interface Armed {
@@ -236,6 +237,34 @@ export class Looper {
 
     this.armed = {
       kind: "rewrite",
+      trackId: id,
+      label: track.label,
+      mode: track.mode,
+      targetBeat: this.transport.nextArmBeat(ctxTime),
+    };
+  }
+
+  /**
+   * Arms a recording that is *added to* an existing layer.
+   *
+   * Overdub versus rewrite is the difference between building a part up and
+   * throwing it away: a rewrite replaces, an overdub layers another pass into
+   * the same lane. The layer keeps playing throughout, so the new pass is played
+   * along with what is already there.
+   */
+  overdub(ctxTime: number, id: TrackId): void {
+    const track = this.tracksValue.get(id);
+
+    // A layer with no events is not something to add to — an imported empty
+    // take is the only way to meet one — so this refuses rather than arming a
+    // recording that would silently be a rewrite.
+    if (!track?.take || track.take.events.length === 0) return;
+    if (this.armed !== null || this.recording !== null) return;
+
+    this.startClockIfNeeded(ctxTime);
+
+    this.armed = {
+      kind: "overdub",
       trackId: id,
       label: track.label,
       mode: track.mode,
@@ -471,19 +500,27 @@ export class Looper {
     if (armed.kind === "new" && !this.hasTake) this.originBeat = armed.targetBeat;
 
     const existing = this.tracksValue.get(armed.trackId);
-    if (existing?.take) this.displaced = { trackId: existing.id, take: existing.take };
+    if (armed.kind === "rewrite" && existing?.take) {
+      this.displaced = { trackId: existing.id, take: existing.take };
+    }
 
-    // Re-recording a layer replaces it, so the old take stops sounding now
-    // rather than playing underneath the new one. Its mute and its level
-    // survive: they are how the part sits in the mix, not part of the take.
-    this.tracksValue.set(armed.trackId, {
-      id: armed.trackId,
-      label: armed.label,
-      mode: armed.mode,
-      take: null,
-      muted: existing?.muted ?? false,
-      gain: existing?.gain ?? 1,
-    });
+    // An overdub records *into* the take already there, so the layer keeps
+    // sounding while the new pass is captured — which is the only way to play
+    // along with the thing you are adding to. Everything else clears the take
+    // first, so the old one stops rather than playing underneath the new one.
+    //
+    // Mute and level survive either way: they are how the part sits in the mix,
+    // not part of the take.
+    if (armed.kind !== "overdub") {
+      this.tracksValue.set(armed.trackId, {
+        id: armed.trackId,
+        label: armed.label,
+        mode: armed.mode,
+        take: null,
+        muted: existing?.muted ?? false,
+        gain: existing?.gain ?? 1,
+      });
+    }
 
     this.recordOriginBeat = armed.targetBeat;
     this.recordOffset = this.wrap(this.recordOriginBeat - this.originBeat);
@@ -509,14 +546,27 @@ export class Looper {
     });
 
     if (take.events.length === 0) {
-      // Nothing was played, so nothing has changed: put back whatever the
-      // rewrite displaced, or forget a layer with nothing in it.
+      // An overdub that added nothing leaves the layer exactly as it was —
+      // dropping it would delete a part because the player did not play.
+      if (recording.kind === "overdub") {
+        this.recording = null;
+        this.displaced = null;
+        return;
+      }
+
+      // Otherwise nothing has changed: put back whatever the rewrite displaced,
+      // or forget a layer with nothing in it.
       this.restoreOrDrop(recording);
       return;
     }
 
     const existing = this.tracksValue.get(recording.trackId);
-    if (existing) this.tracksValue.set(recording.trackId, { ...existing, take });
+    if (existing) {
+      const merged =
+        recording.kind === "overdub" && existing.take ? mergeTakes(existing.take, take) : take;
+
+      this.tracksValue.set(recording.trackId, { ...existing, take: merged });
+    }
 
     this.recording = null;
     this.displaced = null;

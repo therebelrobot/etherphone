@@ -8,7 +8,7 @@
  * uses. The reuse is the point. If the loop and the hand could disagree about
  * what a chord is, they eventually would.
  */
-import type { TakeEvent } from "../types";
+import type { Take, TakeEvent } from "../types";
 import { getChordTones } from "./harmony";
 import { frequencyForDegree } from "./mono";
 import { getSolidNotes } from "./voicings";
@@ -49,6 +49,30 @@ export function resolveTakeEvent(event: TakeEvent, tonicFrequency: number): Reso
       return { notes, volume: event.volume, tilt: event.tilt };
     }
   }
+}
+
+/**
+ * Folds a second pass into an existing take, for an overdub.
+ *
+ * The subtlety is rests. In a take of its own a rest means "this silenced what
+ * was sounding"; in a pass *added* to a take it means "I played nothing here",
+ * and letting it erase the base would make every overdub delete the notes it was
+ * not playing at the time. So rests from the added pass are dropped, and where
+ * both passes do play, the newer one wins — a beat holds one intent.
+ */
+export function mergeTakes(base: Take, addition: Take): Take {
+  const byBeat = new Map<number, TakeEvent>();
+
+  for (const event of base.events) byBeat.set(event.beat, event);
+  for (const event of addition.events) {
+    if (event.kind === "rest") continue;
+    byBeat.set(event.beat, event);
+  }
+
+  return {
+    ...base,
+    events: [...byBeat.values()].sort((a, b) => a.beat - b.beat),
+  };
 }
 
 /**
