@@ -23,6 +23,8 @@ export interface AppElements {
   readonly loadSample: HTMLButtonElement;
   readonly wavetableFile: HTMLInputElement;
   readonly sampleFile: HTMLInputElement;
+  readonly voiceButton: HTMLButtonElement;
+  readonly voicePrivacy: HTMLElement;
   readonly guideToggle: HTMLButtonElement;
   readonly gestureGuide: HTMLElement;
   readonly tempoSelect: HTMLSelectElement;
@@ -82,6 +84,8 @@ export function getAppElements(): AppElements {
     loadSample: requireElement<HTMLButtonElement>("#loadSample"),
     wavetableFile: requireElement<HTMLInputElement>("#wavetableFile"),
     sampleFile: requireElement<HTMLInputElement>("#sampleFile"),
+    voiceButton: requireElement<HTMLButtonElement>("#voiceButton"),
+    voicePrivacy: requireElement("#voicePrivacy"),
     guideToggle: requireElement<HTMLButtonElement>("#guideToggle"),
     gestureGuide: requireElement("#gestureGuide"),
     tempoSelect: requireElement<HTMLSelectElement>("#tempoSelect"),

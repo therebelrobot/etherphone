@@ -37,6 +37,23 @@ export const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
   audio: false,
 };
 
+/**
+ * Microphone constraints, for the separate audio-only request.
+ *
+ * Deliberately bare: echo cancellation, noise suppression and auto-gain are all
+ * *musical* decisions rather than defaults, and every one of them is destructive
+ * for a voice loop. A hummed line with noise suppression is a hummed line with
+ * its timbre chewed, and auto-gain would flatten the expression the take is
+ * supposed to record.
+ */
+export const MIC_CONSTRAINTS: MediaStreamConstraints = {
+  audio: {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+  },
+};
+
 /** Horizontal wrist travel, in normalised units, that maps to a full 100% tilt. */
 export const TILT_MAX_TRAVEL = 0.12;
 

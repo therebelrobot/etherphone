@@ -373,6 +373,22 @@ body {
   font-size: 13px;
 }
 
+/*
+ * The voice control, and the promise that goes with it. The privacy line is
+ * visible rather than a tooltip: "nothing is uploaded" is the kind of thing a
+ * player should be able to read without going looking for it, and a permission
+ * dialog is a bad place to start trusting something.
+ */
+#voicePrivacy {
+  display: block;
+  max-width: 220px;
+  margin-top: 2px;
+  color: #7a7a8d;
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 /* ---- Readouts ---- */
 
 #chordDisplay {

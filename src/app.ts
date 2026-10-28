@@ -72,6 +72,9 @@ import {
   takeDocumentFilename,
 } from "./music/take-document";
 import { renderTakeToWav } from "./audio/render";
+import { canRequestMicrophone, startMicrophone } from "./audio/microphone";
+import { recordVoiceLoop as captureVoiceBuffer } from "./audio/voice-capture";
+import { isSilentCapture, loopFrameCount } from "./audio/voice-loop";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
 import type {
   CanvasPoint,
@@ -98,6 +101,7 @@ import { downloadBlob } from "./ui/download";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
 import { ArticulationGesture } from "./vision/articulation-gesture";
+import { describeDeviceError } from "./media";
 import { startCamera, describeCameraError, hasSecureContext } from "./vision/camera";
 import {
   classifyChord,
@@ -569,11 +573,90 @@ export class GestureSynthApp {
 
     this.els.renderWavButton.addEventListener("click", () => void this.exportTakeWav());
 
+    this.els.voiceButton.addEventListener("click", () => void this.recordVoiceLoop());
+
+    // The promise is stated where the button is, and only where it applies: the
+    // microphone is a permission a player should be able to read about before
+    // granting it, rather than a footnote in a readme.
+    this.els.voicePrivacy.classList.toggle("hidden", !canRequestMicrophone());
+
     this.els.importTakeButton.addEventListener("click", () => this.els.takeFile.click());
 
     this.els.takeFile.addEventListener("change", () => {
       void this.importTake(this.els.takeFile);
     });
+  }
+
+  /**
+   * Records one pass of the loop from the microphone, and registers it as an
+   * instrument.
+   *
+   * RFC #9's proposal: "Wrap playback in a `Voice` implementation and register
+   * it, so a captured loop is selectable in the instrument picker exactly like a
+   * sampler." That is what this does — the capture goes through `defineUserSample`,
+   * the same path a loaded file takes, so nothing in the engine knows the
+   * difference. Making it a *layer* on the transport is the next slice.
+   *
+   * The window is aligned to the grid by discarding the frames before the next
+   * line. Alignment matters more here than anywhere else in the instrument: a
+   * captured loop is the one thing that cannot be nudged into place afterwards,
+   * because it is audio rather than intent.
+   */
+  private async recordVoiceLoop(): Promise<void> {
+    if (!canRequestMicrophone()) {
+      // `describeDeviceError` answers an insecure context from the context, not
+      // from an error, because in one there is no error to read.
+      this.flashTransport(describeDeviceError(null, hasSecureContext(), "microphone"));
+      return;
+    }
+
+    // Clicking the button is a user gesture, so this is a legal place to open audio.
+    this.synth.ensureContext();
+    const ctx = this.synth.context;
+    if (!ctx) return;
+
+    try {
+      this.micStream ??= await startMicrophone();
+    } catch (error) {
+      this.flashTransport(
+        error instanceof Error ? error.message : "The microphone could not be started.",
+      );
+      console.warn(`${PROJECT_NAME}: microphone unavailable`, error);
+      return;
+    }
+
+    const frameCount = loopFrameCount(
+      this.transport.loopBeats,
+      this.transport.tempo,
+      ctx.sampleRate,
+    );
+
+    const startAt = this.transport.ctxTimeForBeat(this.transport.nextArmBeat(this.audioTime()));
+    const skipFrames = Math.max(0, Math.round((startAt - ctx.currentTime) * ctx.sampleRate));
+
+    this.flashTransport("Recording voice…");
+
+    try {
+      const buffer = await captureVoiceBuffer(ctx, this.micStream, {
+        frameCount,
+        skipFrames,
+        onProgress: (progress) =>
+          this.flashTransport(`Recording voice… ${Math.round(progress * 100)}%`),
+      });
+
+      if (isSilentCapture(buffer.getChannelData(0))) {
+        this.flashTransport("Nothing heard — the recording was silent");
+        return;
+      }
+
+      this.addInstrument(defineUserSample("Voice loop", buffer));
+      this.flashTransport("Voice loop recorded");
+    } catch (error) {
+      this.flashTransport(
+        error instanceof Error ? error.message : "The voice loop could not be recorded.",
+      );
+      console.warn(`${PROJECT_NAME}: could not record a voice loop`, error);
+    }
   }
 
   /**
@@ -2340,6 +2423,16 @@ export class GestureSynthApp {
 
   /** The depth reader: push the pitch hand forward to hear the note struck again. */
   private readonly articulation = new ArticulationGesture();
+
+  /**
+   * The microphone stream, once it has been granted.
+   *
+   * Kept so the permission prompt is asked *once* and only when a voice layer is
+   * first armed — a dialog before a player has asked for anything is a dialog
+   * that gets dismissed reflexively, and a dismissed prompt is expensive to come
+   * back from.
+   */
+  private micStream: MediaStream | null = null;
 
   /** The player's own map, once it exists. `null` until Custom is first chosen. */
   private customSlots: CustomMapSlots | null = null;

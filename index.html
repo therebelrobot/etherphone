@@ -52,6 +52,17 @@
       <select id="instrumentSelect"></select>
       <button id="loadWavetable" class="load-button">Load Wavetable…</button>
       <button id="loadSample" class="load-button">Load Sample…</button>
+      <button
+        id="voiceButton"
+        class="load-button"
+        title="Record one pass of the loop from the microphone"
+      >
+        Record voice…
+      </button>
+      <small id="voicePrivacy">
+        The microphone is captured and played back on this device only. Nothing is uploaded, and
+        nothing is monitored through your speakers.
+      </small>
       <input id="wavetableFile" type="file" accept=".wav,audio/*" hidden />
       <input id="sampleFile" type="file" accept="audio/*" hidden />
       <button id="guideToggle">Open Guide</button>
