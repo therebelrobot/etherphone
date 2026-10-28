@@ -28,7 +28,7 @@
     "typescript"
   ],
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24.22.1"
   },
   "scripts": {
     "dev": "vite",

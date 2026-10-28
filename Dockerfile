@@ -1,6 +1,12 @@
 # ---- Build stage ----------------------------------------------------------
-# Node 24 on Alpine, matching the version CI and the workflows use.
-FROM node:24-alpine AS build
+# Node 24.22.1 on Alpine, matching .nvmrc and the version CI installs.
+#
+# The patch is pinned, not the major: CVE-2026-111497 (an out-of-bounds write in
+# the Brotli decoder bundled with Node, reachable through whatever decompresses
+# request bodies) was fixed in the 24.x line at 24.22.1, and a floating
+# `node:24-alpine` tag would keep resolving to a vulnerable build until the tag
+# moved. See the Node.js October 2026 security release.
+FROM node:24.22.1-alpine AS build
 
 WORKDIR /app
 
