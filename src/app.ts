@@ -1498,6 +1498,22 @@ export class GestureSynthApp {
       };
     }
 
+    if (this.menuId === "tempo") {
+      return {
+        layout: "list",
+        items: asOptions(this.els.tempoSelect),
+        activeId: this.els.tempoSelect.value,
+      };
+    }
+
+    if (this.menuId === "loop") {
+      return {
+        layout: "list",
+        items: asOptions(this.els.barsSelect),
+        activeId: this.els.barsSelect.value,
+      };
+    }
+
     if (this.menuId === "layers") {
       const tracks = this.looper.tracks;
       if (tracks.length === 0) {
@@ -1660,6 +1676,16 @@ export class GestureSynthApp {
 
     if (this.menuId === "key") {
       this.setKey(choice.id);
+      return;
+    }
+
+    if (this.menuId === "tempo") {
+      this.setTempo(Number(choice.id));
+      return;
+    }
+
+    if (this.menuId === "loop") {
+      this.setBars(Number(choice.id));
       return;
     }
 

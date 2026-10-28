@@ -82,20 +82,27 @@ export interface MenuControllerOptions {
 }
 
 /** A menu whose values are too many for a ring, so it opens as a list. */
-export type MenuTopic = "vocabulary" | "key" | "instrument" | "layers" | "transport" | "settings";
+export type MenuTopic =
+  "vocabulary" | "key" | "instrument" | "tempo" | "loop" | "layers" | "transport" | "settings";
 
 /** The menus the left hand chooses between. */
 export const MENU_TOPICS: readonly MenuOption[] = [
   { id: "vocabulary", label: "Vocabulary" },
   { id: "key", label: "Key" },
   { id: "instrument", label: "Instrument" },
+  // Tempo and loop length sit with the transport rather than inside it: each
+  // is a list of values, which the menu already knows how to render, and
+  // burying them a level deeper would cost a dwell to reach a setting that a
+  // player changes between pieces.
+  { id: "tempo", label: "Tempo" },
+  { id: "loop", label: "Loop" },
   { id: "layers", label: "Layers" },
   { id: "transport", label: "Transport" },
   { id: "settings", label: "Settings" },
 ];
 
 /** The menus that only mean something while the looper is on. */
-const LOOPER_TOPICS = new Set<string>(["transport", "layers"]);
+const LOOPER_TOPICS = new Set<string>(["tempo", "loop", "transport", "layers"]);
 
 /**
  * The menus in play.

@@ -502,15 +502,24 @@ describe("menu topic and mode ids", () => {
     ]);
   });
 
-  it("offers the vocabulary, key, instrument, layers, transport, and settings menus", () => {
+  it("offers the vocabulary, key, instrument, tempo, loop, layers, transport, and settings menus", () => {
     expect(MENU_TOPICS.map((topic) => topic.id)).toEqual([
       "vocabulary",
       "key",
       "instrument",
+      "tempo",
+      "loop",
       "layers",
       "transport",
       "settings",
     ]);
+  });
+
+  it("treats tempo and loop length as part of the looper, not as settings", () => {
+    // Both are meaningless without a loop to be the tempo and length *of*, so
+    // they go when the looper goes — like Transport and Layers.
+    expect(menuTopicsFor(false).map((topic) => topic.id)).not.toContain("tempo");
+    expect(menuTopicsFor(false).map((topic) => topic.id)).not.toContain("loop");
   });
 
   it("uses the configured dead zone for both clusters", () => {
