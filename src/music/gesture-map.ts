@@ -8,7 +8,7 @@
  * lookup; nothing in this module touches landmarks or audio, so every preset is
  * plain data that a test can enumerate.
  */
-import { NUMERAL_TO_DEGREE } from "../config/music";
+import { DEGREE_NUMERALS, NUMERAL_TO_DEGREE } from "../config/music";
 import type { ChordNumeral, GestureMap, GestureRow, HandShape, Numeral } from "../types";
 
 /** Bit value for each finger, in the order a shape is read. */
@@ -134,6 +134,22 @@ export function getGestureMap(id: string): GestureMap {
 }
 
 /** The scale degree a numeral sits on, ignoring the case that carries the mode. */
+/**
+ * Shifts a numeral up or down the scale, keeping its quality.
+ *
+ * Wraps within the seven degrees, so a shift past VII comes back to I — the
+ * alternative is a numeral the instrument has no chord for. Case carries the
+ * quality and is preserved, so shifting a minor chord leaves it minor.
+ */
+export function shiftNumeral(numeral: ChordNumeral, steps: number): ChordNumeral {
+  const upper = numeral === numeral.toUpperCase();
+  const index = (degreeOf(numeral) - 1 + steps) % 7;
+  const wrapped = index < 0 ? index + 7 : index;
+  const shifted = DEGREE_NUMERALS[wrapped] ?? "I";
+
+  return (upper ? shifted.toUpperCase() : shifted.toLowerCase()) as ChordNumeral;
+}
+
 export function degreeOf(numeral: ChordNumeral): number {
   return NUMERAL_TO_DEGREE[numeral.toUpperCase() as Numeral];
 }

@@ -21,12 +21,22 @@ export const CUSTOM_MAP_ID = "custom";
 /** What the picker calls it. */
 export const CUSTOM_MAP_LABEL = "Custom";
 
+/**
+ * What a shape does: play a degree, play nothing, or *arm* a transposition.
+ *
+ * The modifier is a slot target rather than a separate setting, because a
+ * shape's job is exactly what a slot decides and a second place to say it would
+ * be a second place to disagree. It is also what makes it reachable by gesture
+ * without inventing a picker for thirty-two shapes.
+ */
+export type SlotTarget = ChordNumeral | null | "modifier";
+
 /** The seven things a custom map decides. */
 export interface CustomMapSlots {
-  /** What one to five fingers play, in order. `null` means nothing. */
-  readonly byCount: readonly (ChordNumeral | null)[];
-  readonly rockSign: ChordNumeral | null;
-  readonly rockSignThumb: ChordNumeral | null;
+  /** What one to five fingers do, in order. `null` means nothing. */
+  readonly byCount: readonly SlotTarget[];
+  readonly rockSign: SlotTarget;
+  readonly rockSignThumb: SlotTarget;
 }
 
 /** One editable slot, as the editor lists it. */
@@ -35,8 +45,8 @@ export interface CustomMapSlot {
   readonly label: string;
   /** The shape that stands for the slot, used for the cheat sheet. */
   readonly shape: HandShape;
-  readonly read: (slots: CustomMapSlots) => ChordNumeral | null;
-  readonly write: (slots: CustomMapSlots, numeral: ChordNumeral | null) => CustomMapSlots;
+  readonly read: (slots: CustomMapSlots) => SlotTarget;
+  readonly write: (slots: CustomMapSlots, target: SlotTarget) => CustomMapSlots;
 }
 
 const SLOT_IDS = ["count-1", "count-2", "count-3", "count-4", "count-5", "rock", "rock-thumb"];
@@ -54,9 +64,9 @@ export const CUSTOM_MAP_SLOTS: readonly CustomMapSlot[] = [
     label: `${count} finger${count === 1 ? "" : "s"}`,
     shape: ALL_SHAPES.filter((shape) => countFingers(shape) === count)[0] ?? 0,
     read: (slots: CustomMapSlots) => slots.byCount[index] ?? null,
-    write: (slots: CustomMapSlots, numeral: ChordNumeral | null): CustomMapSlots => {
+    write: (slots: CustomMapSlots, target: SlotTarget): CustomMapSlots => {
       const byCount = [...slots.byCount];
-      byCount[index] = numeral;
+      byCount[index] = target;
       return { ...slots, byCount };
     },
   })),
@@ -76,6 +86,13 @@ export const CUSTOM_MAP_SLOTS: readonly CustomMapSlot[] = [
   },
 ];
 
+/** How the editor names a slot's target. */
+export function describeSlotTarget(target: SlotTarget): string {
+  if (target === null) return "—";
+  if (target === "modifier") return "Modifier";
+  return target;
+}
+
 /** Every slot silent: the map a player starts from before choosing anything. */
 export const EMPTY_SLOTS: CustomMapSlots = {
   byCount: [null, null, null, null, null],
@@ -92,22 +109,29 @@ export const EMPTY_SLOTS: CustomMapSlots = {
  */
 export function customMapFromSlots(slots: CustomMapSlots): GestureMap {
   const shapes = new Map<HandShape, ChordNumeral | null>();
+  const played = (target: SlotTarget): ChordNumeral | null =>
+    target === "modifier" ? null : target;
 
   for (const shape of ALL_SHAPES) {
-    shapes.set(shape, slots.byCount[countFingers(shape) - 1] ?? null);
+    shapes.set(shape, played(slots.byCount[countFingers(shape) - 1] ?? null));
   }
 
   // The two named shapes win over the count rule, which is what makes them
   // reachable at all: both are *two-finger* shapes.
-  shapes.set(ROCK_SIGN, slots.rockSign);
-  shapes.set(ROCK_SIGN_THUMB, slots.rockSignThumb);
+  shapes.set(ROCK_SIGN, played(slots.rockSign));
+  shapes.set(ROCK_SIGN_THUMB, played(slots.rockSignThumb));
+
+  // At most one shape can be the modifier, and the first slot set to it wins —
+  // two transposing shapes would be ambiguous about which armed what.
+  const modifier = CUSTOM_MAP_SLOTS.find((slot) => slot.read(slots) === "modifier");
 
   return {
     id: CUSTOM_MAP_ID,
     label: CUSTOM_MAP_LABEL,
-    description: "Your own map: seven shapes, whatever they should play.",
+    description: "Your own map: seven shapes, whatever they should do.",
     shapes,
     tiltPicksMode: true,
+    transposeShape: modifier ? modifier.shape : null,
   };
 }
 
@@ -124,15 +148,20 @@ export function slotsFromMap(map: GestureMap): CustomMapSlots {
   const firstWithCount = (count: number): HandShape | undefined =>
     ALL_SHAPES.find((shape) => countFingers(shape) === count);
 
-  const byCount = [1, 2, 3, 4, 5].map((count) => {
-    const shape = firstWithCount(count);
-    return shape === undefined ? null : (map.shapes.get(shape) ?? null);
-  });
+  // A shape that plays nothing but is the map's modifier reads back as the
+  // modifier, not as silence — otherwise editing a map would quietly disarm it.
+  const target = (shape: HandShape | undefined): SlotTarget => {
+    if (shape === undefined) return null;
+    if (map.transposeShape !== null && shape === map.transposeShape) return "modifier";
+    return map.shapes.get(shape) ?? null;
+  };
+
+  const byCount = [1, 2, 3, 4, 5].map((count) => target(firstWithCount(count)));
 
   return {
     byCount,
-    rockSign: map.shapes.get(ROCK_SIGN) ?? null,
-    rockSignThumb: map.shapes.get(ROCK_SIGN_THUMB) ?? null,
+    rockSign: target(ROCK_SIGN),
+    rockSignThumb: target(ROCK_SIGN_THUMB),
   };
 }
 
@@ -169,11 +198,21 @@ const NUMERAL_BY_CODE = new Map(
   Object.entries(CODE_BY_NUMERAL).map(([numeral, code]) => [code, numeral as ChordNumeral]),
 );
 
+/**
+ * The code for a slot that arms a transposition instead of playing.
+ *
+ * A letter rather than a digit, so the string stays seven characters and the
+ * existing length check keeps working — only the alphabet grew.
+ */
+const MODIFIER_CODE = "m";
+
 /** Writes a map's seven decisions as a short string. */
 export function encodeCustomMap(slots: CustomMapSlots): string {
-  const codes = [...slots.byCount, slots.rockSign, slots.rockSignThumb].map((numeral) =>
-    numeral === null ? "0" : (CODE_BY_NUMERAL[numeral] ?? "0"),
-  );
+  const codes = [...slots.byCount, slots.rockSign, slots.rockSignThumb].map((target) => {
+    if (target === null) return "0";
+    if (target === "modifier") return MODIFIER_CODE;
+    return CODE_BY_NUMERAL[target] ?? "0";
+  });
 
   return codes.join("");
 }
@@ -183,20 +222,23 @@ export function decodeCustomMap(text: string): CustomMapSlots | null {
   const trimmed = text.trim();
   if (trimmed.length !== SLOT_IDS.length) return null;
 
-  const numerals = [...trimmed].map((code) => {
+  const targets = [...trimmed].map((code) => {
     if (code === "0") return null;
+    if (code === MODIFIER_CODE) return "modifier";
     return NUMERAL_BY_CODE.get(code) ?? null;
   });
 
   // An unknown character could have been read as "nothing", which would
   // silently change the map. Refusing is the only honest answer.
-  const everyCodeKnown = [...trimmed].every((code) => code === "0" || NUMERAL_BY_CODE.has(code));
+  const everyCodeKnown = [...trimmed].every(
+    (code) => code === "0" || code === MODIFIER_CODE || NUMERAL_BY_CODE.has(code),
+  );
   if (!everyCodeKnown) return null;
 
   return {
-    byCount: numerals.slice(0, 5),
-    rockSign: numerals[5] ?? null,
-    rockSignThumb: numerals[6] ?? null,
+    byCount: targets.slice(0, 5),
+    rockSign: targets[5] ?? null,
+    rockSignThumb: targets[6] ?? null,
   };
 }
 
@@ -214,15 +256,17 @@ export function hashForCustomMap(slots: CustomMapSlots): string {
 
 /** Reads a map out of a URL hash, or `null` when there is not one. */
 export function slotsFromHash(hash: string): CustomMapSlots | null {
-  const match = /(?:^#|&)map=([0-9a-g]{7})(?:&|$)/.exec(hash.trim());
+  const match = /(?:^#|&)map=([0-9a-gm]{7})(?:&|$)/.exec(hash.trim());
   return match?.[1] ? decodeCustomMap(match[1]) : null;
 }
 
 /** Whether the map would play nothing at all, which is not a map yet. */
 export function isSilentMap(slots: CustomMapSlots): boolean {
-  return (
-    slots.byCount.every((numeral) => numeral === null) &&
-    slots.rockSign === null &&
-    slots.rockSignThumb === null
+  const everySlotPlaysNothing = [...slots.byCount, slots.rockSign, slots.rockSignThumb].every(
+    // A modifier is not a degree: a map whose only slot arms a transposition for
+    // a chord that can never be made is still a map that plays nothing.
+    (target) => target === null || target === "modifier",
   );
+
+  return everySlotPlaysNothing;
 }

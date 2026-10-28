@@ -41,13 +41,19 @@ import {
   CUSTOM_MAP_SLOTS,
   customMapFromSlots,
   decodeCustomMap,
+  describeSlotTarget,
   encodeCustomMap,
   hashForCustomMap,
   slotsFromHash,
   slotsFromMap,
 } from "./music/custom-map";
-import type { CustomMapSlots } from "./music/custom-map";
-import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
+import type { CustomMapSlots, SlotTarget } from "./music/custom-map";
+import {
+  DEFAULT_GESTURE_MAP_ID,
+  GESTURE_MAPS,
+  getGestureMap,
+  shiftNumeral,
+} from "./music/gesture-map";
 import { handName, HANDS, otherHand, parseHarmonyHand } from "./music/hands";
 import { describeLooper, GAIN_STEP, Looper } from "./music/looper";
 import type { LoopLayerSeed, LoopTrack, TrackId } from "./music/looper";
@@ -69,6 +75,7 @@ import type {
   ChordState,
   GestureMap,
   Hand,
+  HandShape,
   Handedness,
   InstrumentMode,
   KeyName,
@@ -89,6 +96,7 @@ import { VolumeMeter } from "./ui/volume-meter";
 import { startCamera, describeCameraError, hasSecureContext } from "./vision/camera";
 import {
   classifyChord,
+  readHandShape,
   getHandCenter,
   getHandHeight,
   getHandHorizontalTilt,
@@ -135,6 +143,9 @@ const EDIT_MAP_ID = "edit-map";
 
 /** The id of the "this shape plays nothing" choice in the editor. */
 const SILENT_SLOT_ID = "none";
+
+/** The id of the "this shape arms a transposition" choice in the editor. */
+const MODIFIER_SLOT_ID = "modifier";
 
 /** The id of the step back out of a shape, to the list of shapes. */
 const MAP_BACK_ID = "map-back";
@@ -980,6 +991,7 @@ export class GestureSynthApp {
 
     this.mapIds[this.harmonyHand] = id;
     remember(this.mapKey(this.harmonyHand), id);
+    this.resetTranspose();
     this.refreshGestureMap();
     this.refreshHelp();
   }
@@ -1010,12 +1022,25 @@ export class GestureSynthApp {
     this.els.gestureMapSelect.value = this.mapIds[this.harmonyHand];
   }
 
+  /**
+   * Forgets any armed transposition.
+   *
+   * Called whenever the vocabulary changes underneath it: a shift armed for one
+   * map must not silently apply to the next one.
+   */
+  private resetTranspose(): void {
+    this.pendingTranspose = 0;
+    this.shapeShift = 0;
+    this.lastChordShape = null;
+  }
+
   /** Swaps which hand plays the chord vocabulary, keeping both maps. */
   private setHarmonyHand(hand: Handedness): void {
     if (hand === this.harmonyHand) return;
 
     this.harmonyHand = hand;
     remember(HARMONY_HAND_STORAGE_KEY, hand);
+    this.resetTranspose();
     this.refreshGestureMap();
     this.refreshHelp();
   }
@@ -1323,7 +1348,14 @@ export class GestureSynthApp {
     const chord = state?.chord ?? null;
 
     this.hud.setChord(getChordDisplayName(chord, isMajorMode, this.keyName), chord);
-    this.hud.setQuality(getVoicingLabel(isMajorMode, qualityIndex), thumbDown);
+    this.hud.setQuality(
+      // An armed shift outranks the voicing label: it is the thing about to
+      // change, and the voicing is not.
+      this.pendingTranspose > 0
+        ? `Modifier +${this.pendingTranspose}`
+        : getVoicingLabel(isMajorMode, qualityIndex),
+      thumbDown,
+    );
 
     this.looper.capture(
       state && state.qualityIndex >= 1
@@ -1974,7 +2006,7 @@ export class GestureSynthApp {
         layout: "radial",
         items: CUSTOM_MAP_SLOTS.map((slot) => ({
           id: slot.id,
-          label: `${slot.label} → ${slot.read(slots) ?? "—"}`,
+          label: `${slot.label} → ${describeSlotTarget(slot.read(slots))}`,
           keepsMenuOpen: true,
         })),
       };
@@ -1991,6 +2023,10 @@ export class GestureSynthApp {
           keepsMenuOpen: true,
         })),
         { id: SILENT_SLOT_ID, label: "Nothing", keepsMenuOpen: true },
+        // The modifier is a slot target rather than a setting, so it is chosen
+        // exactly where a degree is — one more option in the step that already
+        // exists, and no picker for thirty-two shapes.
+        { id: MODIFIER_SLOT_ID, label: "Modifier", keepsMenuOpen: true },
         { id: MAP_BACK_ID, label: "Back", keepsMenuOpen: true },
       ],
       activeId: numeral ?? SILENT_SLOT_ID,
@@ -2164,11 +2200,16 @@ export class GestureSynthApp {
     const focused = CUSTOM_MAP_SLOTS.find((slot) => slot.id === this.customSlotFocus);
     if (!focused) return;
 
-    const numeral =
-      id === SILENT_SLOT_ID ? null : (NUMERALS_SET.find((candidate) => candidate === id) ?? null);
+    const target: SlotTarget =
+      id === SILENT_SLOT_ID
+        ? null
+        : id === MODIFIER_SLOT_ID
+          ? "modifier"
+          : (NUMERALS_SET.find((candidate) => candidate === id) ?? null);
 
-    this.customSlots = focused.write(this.customSlots ?? slotsFromMap(this.gestureMap), numeral);
+    this.customSlots = focused.write(this.customSlots ?? slotsFromMap(this.gestureMap), target);
     this.saveCustomMap();
+    this.resetTranspose();
     this.refreshGestureMap();
     this.refreshHelp();
   }
@@ -2187,6 +2228,21 @@ export class GestureSynthApp {
    * the shapes can put the chords on the right and keep playing.
    */
   private harmonyHand: Handedness = "Left";
+
+  /**
+   * Transpositions armed by the map's modifier shape, waiting for a chord.
+   *
+   * Held rather than consumed per frame: the chord hand holds one shape for as
+   * long as the chord lasts, so a shift that cleared on the first frame would
+   * snap back on the second.
+   */
+  private pendingTranspose = 0;
+
+  /** The chord shape the current shift was applied to, so it is applied once. */
+  private lastChordShape: HandShape | null = null;
+
+  /** The shift in force for that shape. */
+  private shapeShift = 0;
 
   /** Each hand's own map id, so swapping hands does not throw a vocabulary away. */
   private mapIds: Record<Handedness, string> = {
@@ -2272,8 +2328,35 @@ export class GestureSynthApp {
     // is comes from the setting, and the handedness is passed through because
     // tilt and the thumb are both mirrored between hands.
     if (chordLandmarks) {
-      chord = classifyChord(chordLandmarks, chordHand, this.gestureMap);
+      const shape = readHandShape(chordLandmarks, chordHand);
+      const modifier = this.gestureMap.transposeShape;
+
+      // The modifier arms rather than plays. Arming twice shifts twice, which is
+      // how one shape reaches the far side of the scale.
+      if (modifier !== null && modifier !== undefined && shape === modifier) {
+        this.pendingTranspose += 1;
+        this.lastChordShape = null;
+        return null;
+      }
+
+      // A shift is consumed when the shape *changes*, not when the frame does.
+      if (shape !== this.lastChordShape) {
+        this.lastChordShape = shape;
+        this.shapeShift = this.pendingTranspose;
+        this.pendingTranspose = 0;
+      }
+
+      const read = classifyChord(chordLandmarks, chordHand, this.gestureMap);
+
+      // A shift of zero is the common case, and the map lookup is already done,
+      // so only a genuinely armed shape pays for the numeral arithmetic.
+      chord = read === null || this.shapeShift === 0 ? read : shiftNumeral(read, this.shapeShift);
       isMajorMode = getHandHorizontalTilt(chordLandmarks, chordHand) >= 0;
+    } else {
+      // The hand dropped, so the next shape is a fresh decision rather than a
+      // continuation of the last one.
+      this.lastChordShape = null;
+      this.shapeShift = 0;
     }
 
     // The expression hand chooses the voicing and whether it drops an octave.

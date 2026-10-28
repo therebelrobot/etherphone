@@ -44,6 +44,14 @@ export function chordGuideRows(keyName: KeyName, map: GestureMap): ChordGuideRow
     silent: false,
   }));
 
+  // The modifier reaches no degree of its own — it shifts the next chord — so it
+  // is listed as "+1" rather than as a note it does not play.
+  const modifier = map.transposeShape;
+  const shift =
+    modifier === null || modifier === undefined
+      ? []
+      : [{ note: "+1", gesture: describeShape(modifier), silent: false }];
+
   // A dash rather than a note name: the shape reaches nothing, and inventing a
   // note for it is exactly the drift this list exists to prevent.
   const silent = getSilentRows(map).map(({ gesture }) => ({
@@ -52,7 +60,7 @@ export function chordGuideRows(keyName: KeyName, map: GestureMap): ChordGuideRow
     silent: true,
   }));
 
-  return [...playable, ...silent];
+  return [...playable, ...shift, ...silent];
 }
 
 /** The mono rows for a key, highest note first. */

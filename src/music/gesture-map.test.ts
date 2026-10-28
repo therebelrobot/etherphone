@@ -12,6 +12,7 @@ import {
   getGestureRows,
   PENTATONIC_GESTURE_MAP,
   shapeFromFingers,
+  shiftNumeral,
   TRIAD_GESTURE_MAP,
 } from "./gesture-map";
 
@@ -176,5 +177,37 @@ describe("GESTURE_MAPS", () => {
     for (const map of GESTURE_MAPS) {
       expect(getGestureRows(map).length, map.id).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("shiftNumeral", () => {
+  it("moves up the scale by the steps asked for", () => {
+    expect(shiftNumeral("I", 1)).toBe("II");
+    expect(shiftNumeral("I", 3)).toBe("IV");
+  });
+
+  it("wraps past the seventh, because there is no eighth chord", () => {
+    expect(shiftNumeral("VII", 1)).toBe("I");
+    expect(shiftNumeral("VI", 2)).toBe("I");
+  });
+
+  it("wraps downwards too", () => {
+    expect(shiftNumeral("I", -1)).toBe("VII");
+    expect(shiftNumeral("II", -3)).toBe("VI");
+  });
+
+  it("keeps the quality, so a minor chord stays minor", () => {
+    expect(shiftNumeral("i", 1)).toBe("ii");
+    expect(shiftNumeral("vii", 1)).toBe("i");
+  });
+
+  it("is the identity for no steps", () => {
+    for (const numeral of ["I", "IV", "vii"] as const) {
+      expect(shiftNumeral(numeral, 0)).toBe(numeral);
+    }
+  });
+
+  it("returns to where it started after seven steps", () => {
+    expect(shiftNumeral("IV", 7)).toBe("IV");
   });
 });

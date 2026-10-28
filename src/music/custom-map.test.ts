@@ -3,6 +3,8 @@ import { ALL_SHAPES, countFingers, ROCK_SIGN, ROCK_SIGN_THUMB } from "./gesture-
 import { CLASSIC_GESTURE_MAP, PENTATONIC_GESTURE_MAP, TRIAD_GESTURE_MAP } from "./gesture-map";
 import {
   CUSTOM_MAP_ID,
+  CUSTOM_MAP_SLOTS,
+  describeSlotTarget,
   customMapFromSlots,
   decodeCustomMap,
   EMPTY_SLOTS,
@@ -160,5 +162,60 @@ describe("sharing a map by link", () => {
     expect(slotsFromHash("")).toBeNull();
     expect(slotsFromHash("#other=1")).toBeNull();
     expect(slotsFromHash("#map=nonsense")).toBeNull();
+  });
+});
+
+describe("the modifier slot", () => {
+  const WITH_MODIFIER: CustomMapSlots = {
+    byCount: ["I", "IV", "V", null, "modifier"],
+    rockSign: null,
+    rockSignThumb: null,
+  };
+
+  it("makes that shape arm a transposition instead of playing", () => {
+    const map = customMapFromSlots(WITH_MODIFIER);
+
+    // The shape plays nothing of its own...
+    for (const shape of ALL_SHAPES) {
+      if (countFingers(shape) !== 5) continue;
+      expect(map.shapes.get(shape)).toBeNull();
+    }
+    // ...and the map says which shape arms instead.
+    expect(map.transposeShape).toBe(CUSTOM_MAP_SLOTS.find((slot) => slot.id === "count-5")?.shape);
+  });
+
+  it("is not armed by a map that has no modifier", () => {
+    expect(customMapFromSlots(TRIAD_SLOTS).transposeShape).toBeNull();
+  });
+
+  it("survives the round trip, so editing does not quietly disarm it", () => {
+    const slots = slotsFromMap(customMapFromSlots(WITH_MODIFIER));
+
+    expect(slots.byCount[4]).toBe("modifier");
+    expect(slots).toEqual(WITH_MODIFIER);
+  });
+
+  it("keeps the seven-character encoding, with one more letter in the alphabet", () => {
+    const encoded = encodeCustomMap(WITH_MODIFIER);
+
+    expect(encoded).toHaveLength(7);
+    expect(encoded).toBe("1450m00");
+    expect(decodeCustomMap(encoded)).toEqual(WITH_MODIFIER);
+  });
+
+  it("travels in a shared link", () => {
+    expect(slotsFromHash(hashForCustomMap(WITH_MODIFIER))).toEqual(WITH_MODIFIER);
+  });
+
+  it("still counts as a map that plays nothing on its own", () => {
+    expect(isSilentMap({ ...EMPTY_SLOTS, byCount: [null, null, null, null, "modifier"] })).toBe(
+      true,
+    );
+  });
+
+  it("names itself in the editor", () => {
+    expect(describeSlotTarget("modifier")).toBe("Modifier");
+    expect(describeSlotTarget(null)).toBe("—");
+    expect(describeSlotTarget("IV")).toBe("IV");
   });
 });

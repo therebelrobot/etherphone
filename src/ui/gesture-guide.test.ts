@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLASSIC_GESTURE_MAP, TRIAD_GESTURE_MAP } from "../music/gesture-map";
+import { customMapFromSlots, EMPTY_SLOTS } from "../music/custom-map";
 import { PITCH_SPAN_DEGREES } from "../music/mono";
 import { chordGuideRows, controlGuideRows, monoGuideRows } from "./gesture-guide";
 
@@ -101,5 +102,27 @@ describe("controlGuideRows", () => {
 
   it("leaves it out in one-handed staging, where one fist already means the menu", () => {
     expect(controlGuideRows({ looping: true, singleHanded: true })).toHaveLength(2);
+  });
+});
+
+describe("the modifier row", () => {
+  it("is absent when the map has no modifier", () => {
+    const rows = chordGuideRows("C", CLASSIC_GESTURE_MAP);
+
+    expect(rows.some((row) => row.note === "+1")).toBe(false);
+  });
+
+  it("lists the shape that shifts the next chord, as +1 rather than a note", () => {
+    // Five fingers arms a transposition, so the guide has to say so: a shape
+    // that plays nothing and does something else is worse than one that plays.
+    const map = customMapFromSlots({
+      ...EMPTY_SLOTS,
+      byCount: ["I", null, null, null, "modifier"],
+    });
+
+    const row = chordGuideRows("C", map).find((candidate) => candidate.note === "+1");
+
+    expect(row).toBeDefined();
+    expect(row?.silent).toBe(false);
   });
 });

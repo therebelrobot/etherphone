@@ -49,6 +49,14 @@ export interface GestureMap {
   readonly shapes: ReadonlyMap<HandShape, ChordNumeral | null>;
   /** Whether hand tilt picks major/minor, or the numeral's own case is kept. */
   readonly tiltPicksMode: boolean;
+  /**
+   * A shape that arms a transposition instead of playing.
+   *
+   * The next chord made after it is shifted up a degree and the arming clears,
+   * so one shape reaches the whole scale without a second vocabulary. `null`
+   * (or absent) means the map has no modifier.
+   */
+  readonly transposeShape?: HandShape | null;
 }
 
 /** One row of a map's cheat sheet: a shape, the degree it reaches, and what it plays. */
