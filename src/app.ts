@@ -45,7 +45,6 @@ import {
   CUSTOM_MAP_SLOTS,
   customMapFromSlots,
   decodeCustomMap,
-  describeSlotTarget,
   encodeCustomMap,
   hashForCustomMap,
   slotsFromHash,
@@ -95,6 +94,15 @@ import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
 import { menuTopicsFor, MenuController } from "./ui/menu-controller";
 import type { MenuClusterName, MenuTopic } from "./ui/menu-controller";
+import {
+  EDIT_MAP_ID,
+  MAP_BACK_ID,
+  mapEditorCluster,
+  MODIFIER_SLOT_ID,
+  NUMERALS_SET,
+  SILENT_SLOT_ID,
+  vocabularyCluster,
+} from "./ui/menu-clusters";
 import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/radial-menu";
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { downloadBlob } from "./ui/download";
@@ -148,26 +156,6 @@ const SNAP_STRENGTH_ID = "snap-strength";
 
 /** The id of the entry that turns re-articulation on or off. */
 const REARTICULATE_ID = "rearticulate";
-
-/**
- * The id of the "edit my map" entry in the vocabulary menu.
- *
- * The editor lives inside Vocabulary rather than in the left-hand ring, because
- * a map is a *vocabulary* and that is where a player already goes to choose one.
- */
-const EDIT_MAP_ID = "edit-map";
-
-/** The id of the "this shape plays nothing" choice in the editor. */
-const SILENT_SLOT_ID = "none";
-
-/** The id of the "this shape arms a transposition" choice in the editor. */
-const MODIFIER_SLOT_ID = "modifier";
-
-/** The id of the step back out of a shape, to the list of shapes. */
-const MAP_BACK_ID = "map-back";
-
-/** The degrees a shape can be given, in the order a scale runs. */
-const NUMERALS_SET: readonly ChordNumeral[] = ["I", "II", "III", "IV", "V", "VI", "VII"];
 
 /**
  * The id of the "save the take" entry in the transport menu.
@@ -1952,6 +1940,16 @@ export class GestureSynthApp {
       if (track) return track.label;
     }
 
+    // The editor is named here for the same reason a layer is: it is a
+    // drill-down, so the ring shows no menu in force and the readout is the only
+    // place that can say where the player is. Without it, choosing *Edit map…*
+    // looked like nothing had happened.
+    if (this.menuId === "map") {
+      const focused = CUSTOM_MAP_SLOTS.find((slot) => slot.id === this.customSlotFocus);
+
+      return focused ? focused.label : "Edit map";
+    }
+
     return this.menuLabel(frame);
   }
 
@@ -2151,7 +2149,10 @@ export class GestureSynthApp {
     }
 
     if (this.menuId === "map") {
-      return this.mapEditorCluster();
+      return mapEditorCluster(
+        this.customSlots ?? slotsFromMap(this.gestureMap),
+        this.customSlotFocus,
+      );
     }
 
     if (this.mode === "mono") {
@@ -2163,62 +2164,8 @@ export class GestureSynthApp {
     }
 
     // In Chords mode the vocabulary menu is the map picker, plus the way into
-    // the editor. Putting it here means a player who has just picked Custom is
-    // one dwell from changing it, rather than having to find a second menu.
-    return {
-      layout: "radial",
-      items: [...asOptions(this.els.gestureMapSelect), { id: EDIT_MAP_ID, label: "Edit map…" }],
-      activeId: this.els.gestureMapSelect.value,
-    };
-  }
-
-  /**
-   * The editor: seven shapes, then what each one plays.
-   *
-   * Two steps on purpose, and the same shape as the Layers drill-down. A single
-   * cluster offering every shape against every degree would be a grid, and a
-   * hand that is coarse enough to pick a direction cannot pick a cell. So the
-   * first step says *which shape*, the second says *what it does*, and the
-   * second step stays open so several shapes can be changed in one visit.
-   */
-  private mapEditorCluster(): {
-    layout: MenuLayout;
-    items: readonly MenuOption[];
-    activeId?: string;
-  } {
-    const slots = this.customSlots ?? slotsFromMap(this.gestureMap);
-    const focused = CUSTOM_MAP_SLOTS.find((slot) => slot.id === this.customSlotFocus);
-
-    if (!focused) {
-      return {
-        layout: "radial",
-        items: CUSTOM_MAP_SLOTS.map((slot) => ({
-          id: slot.id,
-          label: `${slot.label} → ${describeSlotTarget(slot.read(slots))}`,
-          keepsMenuOpen: true,
-        })),
-      };
-    }
-
-    const numeral = focused.read(slots);
-
-    return {
-      layout: "radial",
-      items: [
-        ...NUMERALS_SET.map((option) => ({
-          id: option,
-          label: option,
-          keepsMenuOpen: true,
-        })),
-        { id: SILENT_SLOT_ID, label: "Nothing", keepsMenuOpen: true },
-        // The modifier is a slot target rather than a setting, so it is chosen
-        // exactly where a degree is — one more option in the step that already
-        // exists, and no picker for thirty-two shapes.
-        { id: MODIFIER_SLOT_ID, label: "Modifier", keepsMenuOpen: true },
-        { id: MAP_BACK_ID, label: "Back", keepsMenuOpen: true },
-      ],
-      activeId: numeral ?? SILENT_SLOT_ID,
-    };
+    // the editor.
+    return vocabularyCluster(asOptions(this.els.gestureMapSelect), this.els.gestureMapSelect.value);
   }
 
   /** The label of a cluster's hovered item, for the readout. */

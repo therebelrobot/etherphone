@@ -373,7 +373,9 @@ The whole RFC is in, including the two halves that waited longest on it:
 
 - **The editor, by gesture.** Vocabulary → _Edit map…_ → a shape → what it does.
   Two steps, the same shape as the Layers drill-down, because a hand coarse enough to
-  pick a direction cannot pick a cell in a grid.
+  pick a direction cannot pick a cell in a grid. The readout names the step — _Edit map_,
+  then the shape in hand — because the left ring holds no menu in force while you are
+  inside the editor, so the readout is the only thing that can say where you are.
 - **Custom maps are shareable.** Seven slots encode as seven characters — `0` for
   nothing, `1`–`7` for I–VII, `a`–`g` for i–vii, `m` for the modifier — and that one
   string is both the storage format and the `#map=1450000` URL. There is no account
