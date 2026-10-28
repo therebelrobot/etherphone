@@ -90,8 +90,9 @@ will load the app but cannot reach the camera.
 
 **Today**
 
-- Left hand chooses the chord and, by tilt, whether it is major or minor
-- Right hand chooses the voicing and the expression
+- The **chord hand** chooses the chord and, by tilt, whether it is major or minor
+- The **expression hand** chooses the voicing and the expression
+- Either hand can be the chord hand, and each keeps its own gesture map
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
 - **Build your own map**: seven shapes, each set to a degree or to nothing, edited from
   the menu and shareable as a link. The cheat sheet lists the silent shapes too

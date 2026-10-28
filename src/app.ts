@@ -22,7 +22,10 @@ import {
   AUDIO,
   BARS_STORAGE_KEY,
   CUSTOM_MAP_STORAGE_KEY,
+  GESTURE_MAP_LEFT_STORAGE_KEY,
+  GESTURE_MAP_RIGHT_STORAGE_KEY,
   GESTURE_MAP_STORAGE_KEY,
+  HARMONY_HAND_STORAGE_KEY,
   LOOPING_STORAGE_KEY,
   MODE_STORAGE_KEY,
   MONO_STYLE_STORAGE_KEY,
@@ -45,6 +48,7 @@ import {
 } from "./music/custom-map";
 import type { CustomMapSlots } from "./music/custom-map";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
+import { handName, HANDS, otherHand, parseHarmonyHand } from "./music/hands";
 import { describeLooper, GAIN_STEP, Looper } from "./music/looper";
 import type { LoopLayerSeed, LoopTrack, TrackId } from "./music/looper";
 import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
@@ -117,6 +121,9 @@ const LOOPING_ID = "looping";
 
 /** The id of the entry that flips how long a recording waits to begin. */
 const ARM_UNIT_ID = "arm-unit";
+
+/** The id of the entry that swaps which hand plays the chord vocabulary. */
+const HARMONY_HAND_ID = "harmony-hand";
 
 /**
  * The id of the "edit my map" entry in the vocabulary menu.
@@ -269,7 +276,16 @@ export class GestureSynthApp {
 
   private tonicFrequency: number;
   private keyName: KeyName;
-  private gestureMap: GestureMap;
+
+  /**
+   * The chord hand's vocabulary, in force.
+   *
+   * Replaced by {@link refreshGestureMap} rather than recomputed per frame:
+   * resolving a custom map expands all thirty-two shapes, and this is read on
+   * every frame. Seeded with the default so it is never undefined, which is also
+   * the honest starting state.
+   */
+  private gestureMap: GestureMap = getGestureMap(DEFAULT_GESTURE_MAP_ID);
   private mode: InstrumentMode;
   private monoStyle: MonoStyle;
 
@@ -344,17 +360,26 @@ export class GestureSynthApp {
     this.applyLoopingVisibility();
     // A shared link outranks the remembered map, and both outrank Classic.
     this.customSlots = this.readHashCustomMap() ?? this.readStoredCustomMap();
+    this.harmonyHand = parseHarmonyHand(this.readStoredMapId(HARMONY_HAND_STORAGE_KEY));
 
-    const storedMapId = restoreSelect(this.els.gestureMapSelect, GESTURE_MAP_STORAGE_KEY);
-    const startingId =
-      this.readHashCustomMap() !== null
-        ? CUSTOM_MAP_ID
-        : storedMapId === CUSTOM_MAP_ID && this.customSlots === null
-          ? DEFAULT_GESTURE_MAP_ID
-          : storedMapId;
+    // The single stored id predates per-hand maps, so it seeds both hands rather
+    // than being discarded: an upgrading player keeps the vocabulary they chose.
+    const legacyId = restoreSelect(this.els.gestureMapSelect, GESTURE_MAP_STORAGE_KEY);
 
-    this.gestureMap = this.resolveGestureMap(startingId);
-    this.els.gestureMapSelect.value = startingId;
+    for (const hand of HANDS) {
+      this.mapIds[hand] = this.readStoredMapId(this.mapKey(hand)) ?? legacyId;
+
+      // A shared link is a deliberate act, so it wins — and it lands on the hand
+      // that is about to play rather than on the left by default.
+      if (this.readHashCustomMap() !== null) this.mapIds[this.harmonyHand] = CUSTOM_MAP_ID;
+
+      // Custom with nothing built yet is not a map.
+      if (this.mapIds[hand] === CUSTOM_MAP_ID && this.customSlots === null) {
+        this.mapIds[hand] = DEFAULT_GESTURE_MAP_ID;
+      }
+    }
+
+    this.refreshGestureMap();
     this.applyModeVisibility();
   }
 
@@ -953,9 +978,45 @@ export class GestureSynthApp {
       this.saveCustomMap();
     }
 
-    this.gestureMap = this.resolveGestureMap(id);
-    this.els.gestureMapSelect.value = id === CUSTOM_MAP_ID ? CUSTOM_MAP_ID : this.gestureMap.id;
-    remember(GESTURE_MAP_STORAGE_KEY, id);
+    this.mapIds[this.harmonyHand] = id;
+    remember(this.mapKey(this.harmonyHand), id);
+    this.refreshGestureMap();
+    this.refreshHelp();
+  }
+
+  /** The storage key for a hand's map. */
+  private mapKey(hand: Handedness): string {
+    return hand === "Left" ? GESTURE_MAP_LEFT_STORAGE_KEY : GESTURE_MAP_RIGHT_STORAGE_KEY;
+  }
+
+  /** Reads a stored map id, or `null` when there is not one. */
+  private readStoredMapId(key: string): string | null {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Recomputes the chord hand's map.
+   *
+   * Called whenever an input to it changes — the hand, either stored id, or the
+   * custom slots — rather than recomputed per frame, because resolving a custom
+   * map expands all thirty-two shapes.
+   */
+  private refreshGestureMap(): void {
+    this.gestureMap = this.resolveGestureMap(this.mapIds[this.harmonyHand]);
+    this.els.gestureMapSelect.value = this.mapIds[this.harmonyHand];
+  }
+
+  /** Swaps which hand plays the chord vocabulary, keeping both maps. */
+  private setHarmonyHand(hand: Handedness): void {
+    if (hand === this.harmonyHand) return;
+
+    this.harmonyHand = hand;
+    remember(HARMONY_HAND_STORAGE_KEY, hand);
+    this.refreshGestureMap();
     this.refreshHelp();
   }
 
@@ -1222,12 +1283,15 @@ export class GestureSynthApp {
       return;
     }
 
-    // Expression follows the right hand in both modes: it is the "how it
-    // sounds" hand, whether the left hand is playing chords or a melody.
-    const volume = Right ? getVolumeFromHeight(Right) : 0;
-    const tilt = Right ? getHandHorizontalTilt(Right, "Right") : 0;
+    // Expression follows the expression hand in both modes: it is the "how it
+    // sounds" hand, whichever side the chord hand is on.
+    const expressionHand = otherHand(this.harmonyHand);
+    const expression = expressionHand === "Left" ? Left : Right;
 
-    if (Right) {
+    const volume = expression ? getVolumeFromHeight(expression) : 0;
+    const tilt = expression ? getHandHorizontalTilt(expression, expressionHand) : 0;
+
+    if (expression) {
       this.hud.setVolume(volume);
       this.hud.setFilter(tilt);
       this.synth.updateFilterSweep(tilt);
@@ -1240,8 +1304,8 @@ export class GestureSynthApp {
     // should do once it stops picking voicings: octave, filter, vibrato, and
     // articulation. Chord mode keeps the count for quality, hence the zero.
     this.synth.setVibrato(
-      this.mode === "mono" && Right
-        ? getRightHandQualityIndex(Right) * AUDIO.vibratoCentsPerFinger
+      this.mode === "mono" && expression
+        ? getRightHandQualityIndex(expression) * AUDIO.vibratoCentsPerFinger
         : 0,
       AUDIO.vibratoRateHz,
     );
@@ -1432,13 +1496,19 @@ export class GestureSynthApp {
     tilt: number,
     ctxTime: number,
   ): void {
-    // The thumb is read from the expression hand even in mono, where there is
-    // no voicing for it to drop: it becomes the octave for a bassline instead.
+    // Pitch comes from the chord hand — the same hand that picks chords picks
+    // the note — and the thumb from the expression hand, where there is no
+    // voicing to drop in mono, so it becomes the octave for a bassline.
+    const pitchHand = this.harmonyHand;
+    const expressionHand = otherHand(pitchHand);
+    const pitch = pitchHand === "Left" ? left : right;
+    const expression = expressionHand === "Left" ? left : right;
+
     const reading = this.mono.update(
-      left ? getHandHeight(left) : null,
+      pitch ? getHandHeight(pitch) : null,
       this.monoStyle,
       this.tonicFrequency,
-      right !== null && isThumbExtended(right, "Right"),
+      expression !== null && isThumbExtended(expression, expressionHand),
     );
 
     // A recorded melody is its degrees, not its frequencies, so it transposes
@@ -1833,15 +1903,25 @@ export class GestureSynthApp {
         keepsMenuOpen: true,
       };
 
+      // Which hand plays the chord vocabulary. A setting rather than a control,
+      // and the whole reason per-hand maps exist: a player whose left hand
+      // cannot form the shapes can put the chords on the right.
+      const harmonyHand: MenuOption = {
+        id: HARMONY_HAND_ID,
+        label: `Chords hand: ${handName(this.harmonyHand)}`,
+        keepsMenuOpen: true,
+      };
+
       const items: MenuOption[] = [
         { id: "chord", label: "Chords", keepsMenuOpen: true },
         { id: "mono", label: "Mono", keepsMenuOpen: true },
+        harmonyHand,
         oneHanded,
         looping,
       ];
 
       // Only meaningful while the looper is on, matching Transport and Layers.
-      if (this.looping) items.splice(2, 0, armUnit);
+      if (this.looping) items.splice(3, 0, armUnit);
 
       return {
         layout: "radial",
@@ -1946,6 +2026,11 @@ export class GestureSynthApp {
 
       if (choice.id === ARM_UNIT_ID) {
         this.setArmUnit(this.armUnit === "bar" ? "beat" : "bar");
+        return;
+      }
+
+      if (choice.id === HARMONY_HAND_ID) {
+        this.setHarmonyHand(otherHand(this.harmonyHand));
         return;
       }
 
@@ -2084,7 +2169,7 @@ export class GestureSynthApp {
 
     this.customSlots = focused.write(this.customSlots ?? slotsFromMap(this.gestureMap), numeral);
     this.saveCustomMap();
-    this.gestureMap = customMapFromSlots(this.customSlots);
+    this.refreshGestureMap();
     this.refreshHelp();
   }
 
@@ -2093,6 +2178,21 @@ export class GestureSynthApp {
 
   /** The player's own map, once it exists. `null` until Custom is first chosen. */
   private customSlots: CustomMapSlots | null = null;
+
+  /**
+   * Which hand plays the chord vocabulary.
+   *
+   * Per-hand maps only mean something alongside this: with the split fixed, a
+   * second vocabulary would be unreachable. A player whose left hand cannot form
+   * the shapes can put the chords on the right and keep playing.
+   */
+  private harmonyHand: Handedness = "Left";
+
+  /** Each hand's own map id, so swapping hands does not throw a vocabulary away. */
+  private mapIds: Record<Handedness, string> = {
+    Left: DEFAULT_GESTURE_MAP_ID,
+    Right: DEFAULT_GESTURE_MAP_ID,
+  };
 
   /** Which menu the left hand has chosen, and the right hand is choosing within. */
   private menuId: MenuTopic = "vocabulary";
@@ -2158,23 +2258,28 @@ export class GestureSynthApp {
 
   /** Reduces raw landmarks to musical intent, before stabilisation. */
   private readIntent(left: Hand | null, right: Hand | null): ChordState | null {
+    const chordHand = this.harmonyHand;
+    const expressionHand = otherHand(chordHand);
+    const chordLandmarks = chordHand === "Left" ? left : right;
+    const expressionLandmarks = expressionHand === "Left" ? left : right;
+
     let chord: ChordNumeral | null = null;
     let isMajorMode = true;
     let qualityIndex = 0;
     let thumbDown = false;
 
-    // Left hand chooses the chord and, via tilt, the mode.
-    if (left) {
-      const leftTilt = getHandHorizontalTilt(left, "Left");
-
-      chord = classifyChord(left, "Left", this.gestureMap);
-      isMajorMode = leftTilt >= 0;
+    // The chord hand chooses the chord and, via tilt, the mode. Which side that
+    // is comes from the setting, and the handedness is passed through because
+    // tilt and the thumb are both mirrored between hands.
+    if (chordLandmarks) {
+      chord = classifyChord(chordLandmarks, chordHand, this.gestureMap);
+      isMajorMode = getHandHorizontalTilt(chordLandmarks, chordHand) >= 0;
     }
 
-    // Right hand chooses the voicing and whether it drops an octave.
-    if (right) {
-      qualityIndex = getRightHandQualityIndex(right);
-      thumbDown = isThumbExtended(right, "Right");
+    // The expression hand chooses the voicing and whether it drops an octave.
+    if (expressionLandmarks) {
+      qualityIndex = getRightHandQualityIndex(expressionLandmarks);
+      thumbDown = isThumbExtended(expressionLandmarks, expressionHand);
     }
 
     if (!chord) return null;

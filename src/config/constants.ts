@@ -182,6 +182,23 @@ export const BARS_STORAGE_KEY = "etherphone.bars";
 /** Where a player's own gesture map is remembered, as its seven-character code. */
 export const CUSTOM_MAP_STORAGE_KEY = "etherphone.custom-map";
 
+/**
+ * Which hand plays the chord vocabulary.
+ *
+ * Persisted separately from the maps themselves, so swapping hands is a
+ * one-setting change that keeps both vocabularies intact.
+ */
+export const HARMONY_HAND_STORAGE_KEY = "etherphone.harmony-hand";
+
+/**
+ * Each hand's own map, remembered independently.
+ *
+ * The pre-existing single key is still read as the starting value for both, so a
+ * player upgrading does not lose the vocabulary they had chosen.
+ */
+export const GESTURE_MAP_LEFT_STORAGE_KEY = "etherphone.gesture-map.left";
+export const GESTURE_MAP_RIGHT_STORAGE_KEY = "etherphone.gesture-map.right";
+
 /** Where the recording is allowed to begin, from {@link ARM_UNIT_CHOICES}. */
 export const ARM_UNIT_STORAGE_KEY = "etherphone.arm-unit";
 
