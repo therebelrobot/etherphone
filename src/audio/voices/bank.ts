@@ -118,13 +118,16 @@ export class OscillatorBank implements Voice {
    * series of staccato notes. Only the sustained bank is silenced, so switching
    * to a pluck still stops a held chord from ringing underneath it.
    */
-  pluck(freqs: number[]): boolean {
+  pluck(freqs: number[], decaySeconds: number = AUDIO.pluckDecaySeconds): boolean {
     if (!this.ctx || !this.destination || freqs.length === 0) return false;
 
     this.release();
 
     const now = this.ctx.currentTime;
-    const end = now + AUDIO.pluckDecaySeconds;
+    // Guarded rather than trusted: a caller asking for a zero-length decay would
+    // make an exponential ramp of length zero, which is a click.
+    const decay = Math.max(AUDIO.staccatoDecaySeconds / 4, decaySeconds);
+    const end = now + decay;
 
     for (const freq of freqs) {
       const oscillator = this.ctx.createOscillator();

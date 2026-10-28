@@ -220,11 +220,11 @@ export class SynthEngine {
    * A voice without `pluck` sustains instead, so the style still plays on a
    * sampler — it just sounds like a held note rather than a struck string.
    */
-  pluckNotes(freqs: number[]): void {
+  pluckNotes(freqs: number[], decaySeconds?: number): void {
     if (!this.ctx || !this.voice || freqs.length === 0) return;
 
     if (this.voice.pluck) {
-      this.voice.pluck(freqs);
+      this.voice.pluck(freqs, decaySeconds);
     } else {
       this.voice.play(freqs);
     }

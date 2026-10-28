@@ -98,7 +98,7 @@ export type InstrumentMode = "chord" | "mono";
  * - `harp` — the nearest degree, plucked afresh on entering one, so a sweep
  *   across the frame plays a harp-like run.
  */
-export type MonoStyle = "quantised" | "glide" | "harp";
+export type MonoStyle = "quantised" | "glide" | "harp" | "staccato";
 
 /** The mono voice's reading of one frame. */
 export interface MonoReading {

@@ -16,7 +16,12 @@
  * Everything except {@link MonoReader}'s edge detection is a pure function, so
  * the mapping is testable without a browser and without landmarks.
  */
-import { MONO_OCTAVE_SPAN, MONO_PITCH_BOTTOM_Y, MONO_PITCH_TOP_Y } from "../config/constants";
+import {
+  AUDIO,
+  MONO_OCTAVE_SPAN,
+  MONO_PITCH_BOTTOM_Y,
+  MONO_PITCH_TOP_Y,
+} from "../config/constants";
 import { DEGREE_NUMERALS, MONO_SCALE_SEMITONES } from "../config/music";
 import type { KeyName, MonoReading, MonoStyle, Numeral } from "../types";
 import { getPlayableTonic, getScaleNoteName, semitoneRatio } from "./harmony";
@@ -137,6 +142,20 @@ export function monoGuideNotes(keyName: KeyName): string[] {
 /** The roman numeral of a reading's degree, used to colour the energy ribbon. */
 export function monoNumeral(reading: MonoReading): Numeral {
   return DEGREE_NUMERALS[(reading.degree - 1) % 7];
+}
+
+/**
+ * How long a plucked style lets a note ring, or `null` for a sustained one.
+ *
+ * The two plucked styles differ only in this: `harp` rings so a sweep is a
+ * phrase, `staccato` cuts short so a sweep is a run of separate notes. Putting
+ * the number here rather than at the call site keeps the mapping in the module
+ * that already owns "what a style means", and gives it somewhere to be tested.
+ */
+export function pluckDecayFor(style: MonoStyle): number | null {
+  if (style === "harp") return AUDIO.pluckDecaySeconds;
+  if (style === "staccato") return AUDIO.staccatoDecaySeconds;
+  return null;
 }
 
 /** How the snap-strength setting names each step. */

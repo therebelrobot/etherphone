@@ -100,7 +100,7 @@ will load the app but cannot reach the camera.
 - **Either hand can be the chord hand**, and each hand keeps its own map, so swapping does
   not throw a vocabulary away
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
-- Three mono styles — quantised, glide, and harp, which now plucks and decays like a string
+- Four mono styles — quantised, glide, harp (plucked, ringing), and staccato (plucked, cut short)
 - **Snap assistance** on a glide: a magnetic pull toward the nearest note, adjustable between off
   and a firm detent. Continuous at every setting — it is not quantisation
 - Mono expression on the right hand: height is volume, tilt is filter, thumb drops an

@@ -60,7 +60,7 @@ import {
 import { handName, HANDS, otherHand, parseHarmonyHand } from "./music/hands";
 import { describeLooper, GAIN_STEP, Looper } from "./music/looper";
 import type { LoopLayerSeed, LoopTrack, TrackId } from "./music/looper";
-import { MonoReader, monoNoteLabel, monoNumeral, snapLabel } from "./music/mono";
+import { MonoReader, monoNoteLabel, monoNumeral, pluckDecayFor, snapLabel } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
 import { resolveTakeEvent } from "./music/take";
 import type { ResolvedEvent } from "./music/take";
@@ -1598,11 +1598,15 @@ export class GestureSynthApp {
         this.synth.glideNotes(notes);
         break;
       case "harp":
-        // Pluck on entering a degree and let it *decay*, so a sweep across the
-        // frame plays a phrase rather than one long slide. `pluckNotes` is what
-        // makes that a harp instead of a run of held notes.
-        if (reading.isNewDegree) this.synth.pluckNotes(notes);
+      case "staccato": {
+        // Pluck on entering a degree and let it *decay*. `pluckNotes` is what
+        // makes this a harp rather than a run of held notes, and the decay is
+        // the whole difference between the two plucked styles: long rings into a
+        // phrase, short is a run of separate notes.
+        const decay = pluckDecayFor(this.monoStyle);
+        if (reading.isNewDegree && decay !== null) this.synth.pluckNotes(notes, decay);
         break;
+      }
       default:
         this.synth.playNotes(notes);
     }

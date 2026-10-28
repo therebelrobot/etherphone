@@ -326,6 +326,15 @@ export const AUDIO = {
   pluckDecaySeconds: 1.2,
   /** The floor an exponential ramp heads for, since it cannot reach zero. */
   pluckFloor: 0.0001,
+  /**
+   * A staccato note's decay, in seconds.
+   *
+   * Short enough that a sweep across the frame is a crisp run of separate notes
+   * rather than the harp's ringing phrase. This is the whole difference between
+   * the two plucked styles, so it is the number to move if one sounds like the
+   * other.
+   */
+  staccatoDecaySeconds: 0.18,
   /** How long past the decay a plucked oscillator is stopped, in seconds. */
   pluckStopPaddingSeconds: 0.02,
 

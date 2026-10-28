@@ -76,10 +76,14 @@ export interface Voice {
    * sounds only while the hand holds it, so a sweep is a legato line. A plucked
    * one rings out and fades, so sweeping across the frame plays a phrase.
    *
+   * `decaySeconds` is how long the note rings; omitting it uses the voice's own
+   * default, which is what the harp wants. A shorter one gives staccato, and the
+   * two styles differ in nothing else.
+   *
    * Optional, like the rest: a sampled drum has nothing to decay, and a voice
    * without it falls back to {@link play} and sustains.
    */
-  pluck?(freqs: number[]): boolean;
+  pluck?(freqs: number[], decaySeconds?: number): boolean;
   /**
    * Replaces the sounding notes at a precise moment, not immediately.
    *

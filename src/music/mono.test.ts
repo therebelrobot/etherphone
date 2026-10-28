@@ -8,6 +8,7 @@ import {
   frequencyForDegree,
   monoNoteLabel,
   monoNumeral,
+  pluckDecayFor,
   snapLabel,
   snapPosition,
 } from "./mono";
@@ -314,5 +315,24 @@ describe("the snap setting", () => {
     });
 
     expect(snapped?.frequency).not.toBe(plain?.frequency);
+  });
+});
+
+describe("pluckDecayFor", () => {
+  it("rings for the harp, so a sweep is a phrase", () => {
+    expect(pluckDecayFor("harp")).toBeGreaterThan(0.5);
+  });
+
+  it("cuts short for staccato, so a sweep is a run of separate notes", () => {
+    const staccato = pluckDecayFor("staccato");
+    const harp = pluckDecayFor("harp");
+
+    expect(staccato).not.toBeNull();
+    expect(staccato!).toBeLessThan(harp!);
+  });
+
+  it("has no decay for the sustained styles, which is what makes them sustained", () => {
+    expect(pluckDecayFor("quantised")).toBeNull();
+    expect(pluckDecayFor("glide")).toBeNull();
   });
 });
