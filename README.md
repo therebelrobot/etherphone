@@ -99,7 +99,7 @@ will load the app but cannot reach the camera.
   The cheat sheet lists the silent shapes too
 - **Either hand can be the chord hand**, and each hand keeps its own map, so swapping does
   not throw a vocabulary away
-- A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
+- A **Mono** mode where the chord hand's height plays a single note: melody, lead, or bassline
 - Four mono styles — quantised, glide, harp (plucked, ringing), and staccato (plucked, cut short)
 - **Snap assistance** on a glide: a magnetic pull toward the nearest note, adjustable between off
   and a firm detent. Continuous at every setting — it is not quantisation
@@ -204,18 +204,29 @@ src/
                            chord classification. Pure functions, no DOM.
     transport-gesture.ts   The transport, by fist: a closed hand flicked a direction
                            records, plays, stops, or clears.
+    articulation-gesture.ts Re-articulation: the pitch hand pushed toward the camera,
+                           measured against a slow baseline rather than absolutely.
     overlay.ts             Cover-crop maths and canvas frame drawing.
 
   music/
     harmony.ts             Roman numeral + tonic -> note names and frequencies.
     mono.ts                The mono voice's pitch mapping: height -> scale degree,
-                           and the quantised, glide, and harp readings of it.
+                           the four readings of it (quantised, glide, harp, staccato),
+                           snap assistance, and which styles pluck for how long.
+    hands.ts               Which hand is the chord hand, and the setting for it.
+    custom-map.ts          A map the player builds: seven slots, their encoding, and
+                           the shareable link that is the same string.
     take.ts                A recorded performance, and how its intent resolves back
-                           into frequencies against the key in play.
+                           into frequencies against the key in play; also merging two
+                           passes for an overdub.
+    take-document.ts       A take as a file: serialising, and a strict parser that
+                           names the field it rejected. Pure, so it is testable.
     recorder.ts            Capturing intent into a take: changes only, on a grid.
-    looper.ts              The layers: arming, recording, phase, playback, mute.
-    gesture-map.ts         The gesture vocabulary as data: hand shapes as bitmasks,
-                           and the Classic, Triad, and Pentatonic presets.
+    looper.ts              The layers: arming, recording, overdub, phase, playback,
+                           mute, levels, and scheduling each event ahead on the clock.
+    gesture-map.ts         The gesture vocabulary as data: hand shapes as bitmasks, the
+                           Classic, Triad, and Pentatonic presets, the silent shapes, and
+                           the numeral shift the modifier uses.
     stabilizer.ts          Holding a reading before committing to it. The chord
                            path and the gesture menu both use DwellStabilizer.
     voicings.ts            The four right-hand voicings per mode, each with a label
@@ -236,6 +247,8 @@ src/
     sampler.ts             Playback-rate maths, the loop crossfade, and the list
                            of bundled recordings. Pure arithmetic.
     user-voices.ts         Turns a file you loaded into a registrable instrument.
+    render.ts              A take rendered offline to a WAV. The scheduling and the
+                           encoding are pure; only the render itself needs a browser.
 
     voices/
       bank.ts              Shared lifecycle for one-oscillator-per-note voices.
@@ -252,10 +265,12 @@ src/
 
   ui/
     dom.ts                 The full list of ids and classes the app expects.
-    hud.ts                 Chord, quality, and filter readouts.
+    hud.ts                 Chord, quality, filter, and mode readouts.
+    download.ts            Handing a file to the player. There is no server anywhere.
     volume-meter.ts        The eight-segment volume meter.
-    gesture-guide.ts       The cheat sheet, rendered for the mode in play: the
-                           active map's degrees, or the mono voice's pitch ladder.
+    gesture-guide.ts       The cheat sheet, rendered for the mode in play: the active
+                           map's degrees *and the shapes that play nothing*, or the mono
+                           voice's pitch ladder — plus the control vocabulary.
     radial-menu.ts         The gesture menu: the ring's geometry and the list's,
                            hit-testing for both, and the fan-out drawing.
     menu-controller.ts     When the menu opens, what it highlights, and what commits.
@@ -263,42 +278,47 @@ src/
     start-overlay.ts       The click-to-enable-audio gate.
 ```
 
-The RFCs each name the modules they would add, and some of them are here already —
+The RFCs each name the modules they would add, and most are here already —
 `src/audio/transport.ts` for the shared clock, `src/music/recorder.ts`, `take.ts` and
-`looper.ts` for the layers. Others are still to come: a mic voice in
-`src/audio/voices/`, and drum kits. The point of the layout is that those are
-additions, not rewrites: the `Voice` seam already made a wavetable and a sampler
-registry entries, the `Transport` is now the one clock percussion and voice looping
+`looper.ts` for the layers, `src/audio/render.ts` for the offline render. What is
+still to come is wave 3: a mic capture module and a mic voice in `src/audio/voices/`,
+pitch detection and shifting in `src/audio/dsp/` for tuned loops, and drum kits. The
+point of the layout is that those are additions, not rewrites: the `Voice` seam
+already made a wavetable and a sampler registry entries, the `Transport` is now the
+one clock percussion and voice looping
 will read, and the looper's tracks were built as layers so a mic loop is one more.
 
 ### How the gestures map to music
 
 The instrument has two **modes**, chosen in the picker at the top of the stack. The
-split is deliberate and worth remembering: the **left hand is the "which notes"
-hand** — harmony in Chords, pitch in Mono — and the **right hand is always the "how
-it sounds" hand**, with the same jobs in both modes.
+split is deliberate and worth remembering: there is a **chord hand** — the "which
+notes" hand, harmony in Chords and pitch in Mono — and an **expression hand**, always
+the "how it sounds" hand, with the same jobs in both modes. **Either hand can be the
+chord hand** (Settings → Chords hand), and each keeps its own gesture map, so a player
+whose left hand cannot form the shapes is not locked out of the instrument.
 
-**Left hand — chord** (Chords mode, the Classic map)
+**Chord hand — chord** (Chords mode, the Classic map)
 
-| Input                 | Result           |
-| --------------------- | ---------------- |
-| 1–5 fingers           | Scale degree I–V |
-| Index + pinky         | VI               |
-| Index + pinky + thumb | VII              |
-| Tilt inward / outward | Major / minor    |
+| Input                 | Result                           |
+| --------------------- | -------------------------------- |
+| 1–5 fingers           | Scale degree I–V                 |
+| Index + pinky         | VI                               |
+| Index + pinky + thumb | VII                              |
+| Tilt inward / outward | Major / minor                    |
+| The map's modifier    | Shift the next chord up a degree |
 
-**Left hand — pitch** (Mono mode)
+**Chord hand — pitch** (Mono mode)
 
 | Input  | Result                                          |
 | ------ | ----------------------------------------------- |
 | Height | A single note: higher in the frame is higher up |
 
-**Right hand — voicing and expression**
+**Expression hand — voicing and expression**
 
 | Input                 | Result                                          |
 | --------------------- | ----------------------------------------------- |
 | 1–4 fingers           | Root position, 1st inversion, 7th, dominant/dim |
-| Thumb in / out        | Drop the voicing an octave / leave it           |
+| Thumb in / out        | Drop the octave (voicing, or the whole line)    |
 | Tilt inward / outward | Close the filter / open it                      |
 | Height                | Louder the higher the hand                      |
 
@@ -310,14 +330,17 @@ wherever the hand is.
 
 **The cheat sheet follows the mode**, because the same hand does different things in
 each. In Chords mode it lists the active gesture map's degrees and the shape that
-selects each; in Mono mode it is a ladder of the notes the pitch hand can reach,
-highest at the top so it reads the way the frame does. The `?` guide is filtered the
-same way — a guide that describes the hand you are not playing is worse than none.
+selects each, **including the shapes that play nothing** and the modifier; in Mono
+mode it is a ladder of the notes the pitch hand can reach, highest at the top so it
+reads the way the frame does. It also carries a **Control** section — the menu and the
+fist transport — because the instrument has had two vocabularies since the menu
+landed, and a vocabulary nobody can see is one nobody uses. The `?` guide is filtered
+the same way: a guide that describes the hand you are not playing is worse than none.
 
 #### Chords mode
 
-The left hand's vocabulary is a **gesture map**, chosen in the picker below the key.
-Three presets ship; the choice is remembered between visits.
+The chord hand's vocabulary is a **gesture map**, chosen in the picker below the key.
+Four options ship; the choice is remembered between visits, **per hand**.
 
 - **Classic** — the inherited vocabulary, and the default, so existing players'
   hands keep working unchanged.
@@ -325,27 +348,43 @@ Three presets ship; the choice is remembered between visits.
   more fingers play nothing, so a degree you are not using cannot fire.
 - **Pentatonic** — the five pentatonic degrees on one to five fingers. It needs no
   rock sign, which is also the shape some players cannot make.
+- **Custom** — seven slots you build yourself, one per finger count plus the two
+  rock signs, each set to a degree, to **nothing**, or to **Modifier**.
 
 This vocabulary is inherited from Gesture Synth, and the Classic map is a _diatonic
 seventh-chord_ vocabulary: it assumes seven degrees and a hand that can make a rock
 sign. [RFC #8](https://github.com/therebelrobot/etherphone/issues/8) made the mapping
 **data** — a hand shape is a bitmask over the five fingers, and a map is a table from
 shape to scale degree — so a player can work in a pentatonic idiom, choose only the
-three chords they want, or reach them with shapes their hands actually make. The
-presets ship; a gesture-driven editor for building custom maps is the remaining half
-of that RFC, and waits on the gesture menu ([#4](https://github.com/therebelrobot/etherphone/issues/4))
-so it can be used without a keyboard.
+three chords they want, or reach them with shapes their hands actually make.
+
+The whole RFC is in, including the two halves that waited longest on it:
+
+- **The editor, by gesture.** Vocabulary → _Edit map…_ → a shape → what it does.
+  Two steps, the same shape as the Layers drill-down, because a hand coarse enough to
+  pick a direction cannot pick a cell in a grid.
+- **Custom maps are shareable.** Seven slots encode as seven characters — `0` for
+  nothing, `1`–`7` for I–VII, `a`–`g` for i–vii, `m` for the modifier — and that one
+  string is both the storage format and the `#map=1450000` URL. There is no account
+  and no server, so a link is the whole distribution mechanism.
+
+**The modifier** is a shape that arms a transposition instead of playing: make it,
+then the next chord you make is shifted up a degree. It is a _slot target_ rather than
+a separate setting, because a shape's job is exactly what a slot decides — and that
+meant no picker for thirty-two shapes and no eighth character in the encoding. Arming
+is shown in the HUD, and a change of map or hand clears it.
 
 #### Mono mode
 
-One note at a time, chosen by the left hand's height and quantised to the key, over a
-range of `MONO_OCTAVE_SPAN` octaves. The pitch hand's position is read three ways:
+One note at a time, chosen by the chord hand's height and quantised to the key, over a
+range of `MONO_OCTAVE_SPAN` octaves. The pitch hand's position is read four ways:
 
 | Style         | What it does                                                                               |
 | ------------- | ------------------------------------------------------------------------------------------ |
 | **Quantised** | Snaps to the nearest scale degree and holds it; moving the hand steps to the next.         |
 | **Glide**     | Slides continuously between degrees, retuning the sounding note rather than restarting it. |
 | **Harp**      | Plucks a fresh note each time the hand enters a degree, so a sweep plays a run.            |
+| **Staccato**  | The same, cut short — a crisp run of separate notes rather than a ringing phrase.          |
 
 Harp is the Omnichord's strum plate: the frame is a span of in-key notes, and moving
 through them plays them in sequence. A harp sweep is why the mono voice has its own
@@ -354,11 +393,37 @@ ascending scale (`MONO_SCALE_SEMITONES`) rather than reusing the chord table's
 is right for a chord rooted on the leading tone but would drop an octave at every
 seventh step of a run.
 
-Glide is the one place the `Voice` seam needed extending. `play()` rebuilds its
+Harp and staccato differ in exactly one number. `pluckDecayFor(style)` is the whole
+mapping: 1.2 s rings into a phrase, 0.18 s is a run.
+
+**Snap assistance** (Settings → _Snap: off / light / firm_) is a magnetic pull toward
+the nearest note while gliding. It is **not** quantisation: the pitch stays
+continuous, and only the _mapping_ flattens near each note and steepens between them,
+so a hand that is roughly in the right place lands exactly in tune while still being
+able to slide. The warp is monotonic at every strength — its derivative is
+`1 − s·cos(2πd)`, never negative — so pitch can never jump backwards as the hand
+moves forward, and the midpoints are fixed so octave boundaries do not drift.
+
+The expression hand carries what a lead player wants beyond pitch: **height is
+volume**, **tilt is filter**, the **thumb drops an octave** (the bassline case, and the
+same control that drops a chord voicing — the instrument should not have two different
+"make it lower" gestures), and the **finger count widens the vibrato**.
+
+**Re-articulation** is the one thing the styles cannot do, because a repeat is not a
+_change_ of note and every style is driven by changes. **Push the pitch hand toward
+the camera** and the note you are holding is struck again. Depth is the axis nothing
+else uses — height is pitch, tilt is filter, thumb is octave, fingers are vibrato — and
+it is the right one rather than merely a spare: a vertical bounce would fight the note
+being played, because the pitch hand's vertical motion _is_ pitch. Settings →
+_Re-strike_ turns it off.
+
+Glide is the one place the `Voice` seam first needed extending. `play()` rebuilds its
 oscillators whenever the frequencies change, which is right for a chord and wrong for
 a glide, so `Voice` gained an optional `retune()` that slides a sounding note instead.
 A voice that cannot retune falls back to `play`, so a glide on such an instrument
-steps rather than going silent.
+steps rather than going silent. Since then `setVibrato`, `pluck`, and `playAt` have
+joined it on the same bargain: each is optional, and a voice that cannot do it
+degrades rather than failing.
 
 #### The gesture menu
 
@@ -403,10 +468,22 @@ Opening the menu silences the instrument: it is a deliberate pause, not an overl
 play through.
 
 The menu carries the vocabulary for the current mode — the gesture maps in Chords mode,
-the mono styles in Mono mode — **plus a switch to the other mode**, because otherwise
-the two sets would be mutually unreachable by gesture. The switch keeps the menu open,
-so the ring re-renders in place and picking the other vocabulary is one continuous
-movement rather than two trips through the menu.
+the mono styles in Mono mode — **plus the map editor** (Vocabulary → _Edit map…_), and a
+switch to the other mode, because otherwise the two sets would be mutually unreachable
+by gesture. The switch keeps the menu open, so the ring re-renders in place and picking
+the other vocabulary is one continuous movement rather than two trips through the menu.
+
+**Tempo** and **loop length** are top-level menus rather than entries buried inside
+Transport: each is a list of values, which the menu already renders by hand height for
+Key and Instrument, and a list of ten tempos was never going to fit a ring. Both go
+when the looper does, like Transport and Layers — a menu of tempo values with no loop
+to be the tempo _of_ is the same nothing the menu already refuses to draw.
+
+The **options cluster is dynamic**. With looping off, **Transport** and **Layers** are
+removed outright — not disabled, not empty, because a menu of controls that do nothing
+is worse than no menu. Choosing a layer hands it over and the cluster re-renders to
+that layer's own actions, which is the first time a choice re-rendered the cluster it
+came from rather than crossing to the other one.
 
 #### Two clusters, one hand each
 
@@ -415,8 +492,9 @@ doors into somewhere else. "Classic" is a choice _in_ the menu; "Key" is a way
 _out_ of it, and they were drawn identically. So each kind now has its own cluster
 and its own hand:
 
-- the **left hand picks the menu** you are in — Vocabulary, Key, Instrument, Settings;
-- the **right hand picks the option** within it.
+- the **chord hand picks the menu** you are in — Vocabulary, Key, Instrument, Tempo,
+  Loop, Layers, Transport, Settings;
+- the **expression hand picks the option** within it.
 
 Both are live at once, so changing menu and changing option are one movement rather
 than two trips. Each cluster is anchored to its own hand, so each hand starts inside
@@ -437,7 +515,10 @@ the middle of the new cluster and cannot select something by simply not moving. 
 cluster waiting its turn is drawn faded, so it is clear which one the hand is on.
 
 It is a setting in **Settings**, which is also where the mode lives now: the mode is
-not a value of the vocabulary, it decides which vocabulary there is.
+not a value of the vocabulary, it decides which vocabulary there is. Settings also
+holds **Chords hand** (which side plays chords), **Snap** (the glide's snap strength),
+**Re-strike** (re-articulation by depth), **Arm on** (the next bar, or the next beat),
+**One hand** (staged menu), and **Looping** (the whole feature, off).
 
 #### The key and the instrument open a list
 
