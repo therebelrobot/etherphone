@@ -105,6 +105,37 @@ body {
   display: none !important;
 }
 
+/*
+ * The left column, as one flow.
+ *
+ * Every control here used to be `position: absolute` with a hardcoded `top`,
+ * which meant a new control landed on top of the one above it unless every
+ * subsequent offset was renumbered by hand — and the microphone button was
+ * added without doing that, so it sat on the mode picker. A flex column cannot
+ * overlap its own children, so the whole class of bug goes rather than this
+ * instance of it.
+ *
+ * It scrolls rather than overflowing: the column's length depends on things the
+ * player controls (how many layers are recorded, whether the guide is open), and
+ * a control that has gone off the bottom of the screen is a control that cannot
+ * be reached.
+ */
+#controlStack {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the scrollbar, so it does not sit on the controls it scrolls. */
+  padding-right: 4px;
+  z-index: 5;
+}
+
 #modeSelect,
 #keySelect,
 #gestureMapSelect,
@@ -114,8 +145,6 @@ body {
 #barsSelect,
 .load-button,
 #guideToggle {
-  position: absolute;
-  left: 12px;
   background: #1a1a1a;
   color: #e8a13d;
   border: 1px solid #3a3428;
@@ -123,62 +152,39 @@ body {
   font-family: monospace;
   font-size: 14px;
   padding: 4px 8px;
-  z-index: 5;
+  /* Narrower than the column, so a closed select does not stretch to the
+     widest thing in it. */
+  align-self: flex-start;
 }
 
-#modeSelect {
-  top: 12px;
+/* The microphone button and the promise that goes with it are one item. */
+.voice-control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: flex-start;
 }
 
-#keySelect {
-  top: 48px;
-}
-
-/* The chord vocabulary and the mono style are alternatives, so they share a
-   slot: the mode decides which one is on screen. */
-#gestureMapSelect,
-#monoStyleSelect {
-  top: 84px;
-}
-
-#instrumentSelect {
-  top: 120px;
-}
-
-#loadWavetable {
-  top: 156px;
-}
-
-#loadSample {
-  top: 192px;
-}
+/*
+ * Nothing to position individually any more: the column does it. The chord
+ * vocabulary and the mono style share a slot because the mode decides which one
+ * is on screen, and the two load buttons and the microphone button share
+ * `.load-button`.
+ */
 
 .load-button {
   cursor: pointer;
 }
 
 #guideToggle {
-  top: 228px;
   cursor: pointer;
 }
 
 /* ---- Looper transport ---- */
 
-#tempoSelect {
-  top: 264px;
-}
-
-#barsSelect {
-  top: 300px;
-}
-
 #transportControls {
-  position: absolute;
-  left: 12px;
-  top: 336px;
   display: flex;
   gap: 6px;
-  z-index: 5;
 }
 
 #transportControls button {
@@ -200,25 +206,17 @@ body {
 }
 
 #transportDisplay {
-  position: absolute;
-  left: 12px;
-  top: 372px;
   color: #e8a13d;
   font-family: monospace;
   font-size: 14px;
-  z-index: 5;
 }
 
 /* One toggle per recorded layer: the fastest way to drop a part out by mouse. */
 #layerControls {
-  position: absolute;
-  left: 12px;
-  top: 400px;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
   max-width: 260px;
-  z-index: 5;
 }
 
 #layerControls button {
@@ -260,12 +258,8 @@ body {
  * reached for mid-phrase.
  */
 #takeControls {
-  position: absolute;
-  left: 12px;
-  top: 452px;
   display: flex;
   gap: 6px;
-  z-index: 5;
 }
 
 #takeControls button {
@@ -302,13 +296,10 @@ body {
 /* ---- Gesture guide ---- */
 
 #gestureGuide {
-  position: absolute;
-  top: 266px;
-  left: 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  z-index: 5;
+  align-self: flex-start;
   font-family: monospace;
   padding: 10px 14px;
   border-radius: 8px;
@@ -382,7 +373,6 @@ body {
 #voicePrivacy {
   display: block;
   max-width: 220px;
-  margin-top: 2px;
   color: #7a7a8d;
   font-family: monospace;
   font-size: 10px;

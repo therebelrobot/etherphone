@@ -20,69 +20,94 @@
         <div class="vol-bar" data-index="1"></div>
         <div class="vol-bar" data-index="0"></div>
       </div>
-      <select id="modeSelect" title="What the left hand plays: chords, or one note at a time">
-        <option value="chord" selected>Chords</option>
-        <option value="mono">Mono</option>
-      </select>
+      <!--
+        The left column, as one flow. Every control here used to be absolutely
+        positioned at a hardcoded `top`, which meant adding a control silently
+        landed it on top of the one above, and required renumbering everything
+        below by hand. A flex column cannot overlap its own children, so that
+        whole class of bug goes with it.
+      -->
+      <div id="controlStack">
+        <select id="modeSelect" title="What the chord hand plays: chords, or one note at a time">
+          <option value="chord" selected>Chords</option>
+          <option value="mono">Mono</option>
+        </select>
 
-      <select id="keySelect">
-        <option value="220.00" data-note="A" selected>A</option>
-        <option value="233.08" data-note="Bb">A#/Bb</option>
-        <option value="246.94" data-note="B">B</option>
-        <option value="261.63" data-note="C">C</option>
-        <option value="277.18" data-note="Db">C#/Db</option>
-        <option value="293.66" data-note="D">D</option>
-        <option value="311.13" data-note="Eb">D#/Eb</option>
-        <option value="329.63" data-note="E">E</option>
-        <option value="349.23" data-note="F">F</option>
-        <option value="369.99" data-note="Gb">F#/Gb</option>
-        <option value="392.00" data-note="G">G</option>
-        <option value="415.30" data-note="Ab">G#/Ab</option>
-      </select>
+        <select id="keySelect">
+          <option value="220.00" data-note="A" selected>A</option>
+          <option value="233.08" data-note="Bb">A#/Bb</option>
+          <option value="246.94" data-note="B">B</option>
+          <option value="261.63" data-note="C">C</option>
+          <option value="277.18" data-note="Db">C#/Db</option>
+          <option value="293.66" data-note="D">D</option>
+          <option value="311.13" data-note="Eb">D#/Eb</option>
+          <option value="329.63" data-note="E">E</option>
+          <option value="349.23" data-note="F">F</option>
+          <option value="369.99" data-note="Gb">F#/Gb</option>
+          <option value="392.00" data-note="G">G</option>
+          <option value="415.30" data-note="Ab">G#/Ab</option>
+        </select>
 
-      <select id="gestureMapSelect" title="Gesture map — the chords your left hand plays"></select>
+        <select
+          id="gestureMapSelect"
+          title="Gesture map — the chords your chord hand plays"
+        ></select>
 
-      <select id="monoStyleSelect" class="hidden" title="How the mono voice follows the pitch hand">
-        <option value="quantised" selected>Quantised</option>
-        <option value="glide">Glide</option>
-        <option value="harp">Harp</option>
-        <option value="staccato">Staccato</option>
-      </select>
+        <select
+          id="monoStyleSelect"
+          class="hidden"
+          title="How the mono voice follows the pitch hand"
+        >
+          <option value="quantised" selected>Quantised</option>
+          <option value="glide">Glide</option>
+          <option value="harp">Harp</option>
+          <option value="staccato">Staccato</option>
+        </select>
 
-      <select id="instrumentSelect"></select>
-      <button id="loadWavetable" class="load-button">Load Wavetable…</button>
-      <button id="loadSample" class="load-button">Load Sample…</button>
-      <button
-        id="voiceButton"
-        class="load-button"
-        title="Record one pass of the loop from the microphone"
-      >
-        Record voice…
-      </button>
-      <small id="voicePrivacy">
-        The microphone is captured and played back on this device only. Nothing is uploaded, and
-        nothing is monitored through your speakers.
-      </small>
-      <input id="wavetableFile" type="file" accept=".wav,audio/*" hidden />
-      <input id="sampleFile" type="file" accept="audio/*" hidden />
-      <button id="guideToggle">Open Guide</button>
-      <div id="gestureGuide" class="hidden"></div>
+        <select id="instrumentSelect"></select>
+        <button id="loadWavetable" class="load-button">Load Wavetable…</button>
+        <button id="loadSample" class="load-button">Load Sample…</button>
+        <div class="voice-control">
+          <button
+            id="voiceButton"
+            class="load-button"
+            title="Record one pass of the loop from the microphone"
+          >
+            Record voice…
+          </button>
+          <small id="voicePrivacy">
+            Captured and played back on this device only. Nothing is uploaded, and nothing is
+            monitored through your speakers.
+          </small>
+        </div>
+        <input id="wavetableFile" type="file" accept=".wav,audio/*" hidden />
+        <input id="sampleFile" type="file" accept="audio/*" hidden />
+        <select id="tempoSelect" title="Loop tempo, in beats per minute"></select>
+        <select id="barsSelect" title="Loop length, in bars"></select>
+        <div id="transportControls">
+          <button id="recordButton" title="Record the next bar line onwards">● Rec</button>
+          <button id="playButton" title="Play the recorded loop">▶ Play</button>
+          <button id="stopButton" title="Stop the loop, keeping it">■ Stop</button>
+          <button id="clearButton" title="Throw the loop away">✕ Clear</button>
+        </div>
+        <div id="transportDisplay">Idle</div>
+        <div id="layerControls"></div>
+        <div id="takeControls">
+          <button id="exportTakeButton" title="Save the loop as a take file">↓ take</button>
+          <button id="importTakeButton" title="Load a take file, replacing the loop">↑ take</button>
+          <button id="renderWavButton" title="Render the loop to a WAV file">↓ wav</button>
+          <input id="takeFile" type="file" accept="application/json,.json" class="hidden" />
+        </div>
 
-      <select id="tempoSelect" title="Loop tempo, in beats per minute"></select>
-      <select id="barsSelect" title="Loop length, in bars"></select>
-      <div id="transportControls">
-        <button id="recordButton" title="Record the next bar line onwards">● Rec</button>
-        <button id="playButton" title="Play the recorded loop">▶ Play</button>
-        <button id="stopButton" title="Stop the loop, keeping it">■ Stop</button>
-        <button id="clearButton" title="Throw the loop away">✕ Clear</button>
-      </div>
-      <div id="transportDisplay">Idle</div>
-      <div id="layerControls"></div>
-      <div id="takeControls">
-        <button id="exportTakeButton" title="Save the loop as a take file">↓ take</button>
-        <button id="importTakeButton" title="Load a take file, replacing the loop">↑ take</button>
-        <button id="renderWavButton" title="Render the loop to a WAV file">↓ wav</button>
-        <input id="takeFile" type="file" accept="application/json,.json" class="hidden" />
+        <!--
+            The cheat sheet sits below the transport on purpose. It is opened
+            deliberately while the transport is reached for mid-performance, so
+            opening it must not move the transport down the screen under a hand
+            that is already reaching for it — which is what it did when both were
+            pinned to fixed offsets.
+          -->
+        <button id="guideToggle">Open Guide</button>
+        <div id="gestureGuide" class="hidden"></div>
       </div>
       <div id="qualityDisplay">--</div>
       <div id="distortionDisplay">Filter: 0%</div>
