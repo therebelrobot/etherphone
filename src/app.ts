@@ -767,6 +767,11 @@ export class GestureSynthApp {
   private setSingleHanded(enabled: boolean): void {
     this.singleHanded = enabled;
     remember(SINGLE_HANDED_STORAGE_KEY, enabled ? "on" : "off");
+
+    // One-handed staging changes which control gestures exist, so the guide has
+    // to be re-rendered — otherwise it would keep offering a fist transport that
+    // this setting just turned off.
+    this.refreshHelp();
   }
 
   /** Reads the remembered arm unit, ignoring anything that is not a choice. */
@@ -885,7 +890,10 @@ export class GestureSynthApp {
 
   /** Re-renders the two places that describe what the hands do. */
   private refreshHelp(): void {
-    this.guide.render(this.mode, this.keyName, this.gestureMap);
+    this.guide.render(this.mode, this.keyName, this.gestureMap, {
+      looping: this.looping,
+      singleHanded: this.singleHanded,
+    });
     this.help.render(this.mode, this.keyName, this.gestureMap, this.looping);
   }
 

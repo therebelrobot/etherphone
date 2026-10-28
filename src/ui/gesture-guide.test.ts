@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CLASSIC_GESTURE_MAP, TRIAD_GESTURE_MAP } from "../music/gesture-map";
 import { PITCH_SPAN_DEGREES } from "../music/mono";
-import { chordGuideRows, monoGuideRows } from "./gesture-guide";
+import { chordGuideRows, controlGuideRows, monoGuideRows } from "./gesture-guide";
 
 describe("chordGuideRows", () => {
   it("gives the classic map its seven rows, in scale order", () => {
@@ -24,8 +24,22 @@ describe("chordGuideRows", () => {
   });
 
   it("shrinks with a smaller map, and shows the notes it reaches", () => {
-    // Triad is I, IV, and V, so the guide lists those three and nothing else.
-    expect(chordGuideRows("C", TRIAD_GESTURE_MAP).map((row) => row.note)).toEqual(["C", "F", "G"]);
+    // Triad is I, IV, and V, so those are the three notes it names.
+    const playable = chordGuideRows("C", TRIAD_GESTURE_MAP).filter((row) => !row.silent);
+    expect(playable.map((row) => row.note)).toEqual(["C", "F", "G"]);
+  });
+
+  it("still lists the shapes that play nothing, rather than omitting them", () => {
+    // Triad makes four and five fingers silent. Omitting them leaves a player
+    // wondering why the hand stopped working.
+    const silent = chordGuideRows("C", TRIAD_GESTURE_MAP).filter((row) => row.silent);
+
+    expect(silent.map((row) => row.gesture)).toEqual(["4️⃣", "5️⃣"]);
+    expect(silent.map((row) => row.note)).toEqual(["—", "—"]);
+  });
+
+  it("has nothing silent to report for the classic map", () => {
+    expect(chordGuideRows("C", CLASSIC_GESTURE_MAP).some((row) => row.silent)).toBe(false);
   });
 });
 
@@ -49,5 +63,43 @@ describe("monoGuideRows", () => {
 
   it("follows the selected key", () => {
     expect(monoGuideRows("A").slice(-3).reverse()).toEqual(["A", "B", "C#"]);
+  });
+});
+
+describe("controlGuideRows", () => {
+  it("always describes how to open the menu and how to commit", () => {
+    const rows = controlGuideRows({ looping: false, singleHanded: false });
+
+    expect(rows.map((row) => row.does)).toEqual(["Menu", "Choose"]);
+    expect(rows[0].gesture).toBe("✊✊ hold");
+  });
+
+  it("describes one fist, not two, when one hand drives the menu", () => {
+    const rows = controlGuideRows({ looping: true, singleHanded: true });
+
+    expect(rows[0].gesture).toBe("✊ hold");
+  });
+
+  it("adds the four flicks when the transport is reachable", () => {
+    const rows = controlGuideRows({ looping: true, singleHanded: false });
+
+    expect(rows.map((row) => row.does)).toEqual([
+      "Menu",
+      "Choose",
+      "Play",
+      "Clear",
+      "Record",
+      "Stop",
+    ]);
+  });
+
+  it("leaves the transport out when looping is off, because there is none", () => {
+    // The same reasoning the ring's contents follow: commands that would do
+    // nothing are worse than no commands.
+    expect(controlGuideRows({ looping: false, singleHanded: false })).toHaveLength(2);
+  });
+
+  it("leaves it out in one-handed staging, where one fist already means the menu", () => {
+    expect(controlGuideRows({ looping: true, singleHanded: true })).toHaveLength(2);
   });
 });

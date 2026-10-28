@@ -145,6 +145,43 @@ export function degreeOf(numeral: ChordNumeral): number {
  * Collapsing to the simplest shape is what keeps the guide to seven rows for the
  * classic count-based map, which really holds thirty-two entries.
  */
+/**
+ * The shapes the active map cannot use, one row per silent finger count.
+ *
+ * A cheat sheet that only lists what works cannot tell a player *why* four
+ * fingers does nothing — and on a custom map, which shapes are silent is the
+ * whole point of the map, so this is the half that matters most.
+ *
+ * Reported per finger count rather than per shape because the presets are
+ * count-based: all five four-finger shapes are silent together, and five rows
+ * would say the same thing five times. A count that is only *partly* silent is
+ * left alone, because that is a distinction only a custom map makes and the row
+ * would misdescribe it.
+ */
+export interface SilentGestureRow {
+  readonly shape: HandShape;
+  readonly gesture: string;
+}
+
+export function getSilentRows(map: GestureMap): SilentGestureRow[] {
+  const rows: SilentGestureRow[] = [];
+
+  for (let count = 1; count <= 5; count += 1) {
+    const shapes = ALL_SHAPES.filter((shape) => countFingers(shape) === count);
+    const anyPlays = shapes.some((shape) => {
+      const numeral = map.shapes.get(shape);
+      return numeral !== null && numeral !== undefined;
+    });
+
+    const representative = shapes[0];
+    if (anyPlays || representative === undefined) continue;
+
+    rows.push({ shape: representative, gesture: describeShape(representative) });
+  }
+
+  return rows;
+}
+
 export function getGestureRows(map: GestureMap): GestureRow[] {
   const simplest = new Map<ChordNumeral, HandShape>();
 

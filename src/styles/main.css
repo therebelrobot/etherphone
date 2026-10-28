@@ -341,6 +341,38 @@ body {
   line-height: 1.5;
 }
 
+/* A shape the active map cannot use: still listed, visibly out of play. */
+.gesture-guide-row.silent {
+  opacity: 0.45;
+}
+
+.gesture-guide-row.silent .gesture-guide-note {
+  color: #6a6a7a;
+}
+
+/* The second vocabulary: the menu and the fist transport. */
+.gesture-guide-heading {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #2c2c38;
+  color: #9a9aad;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gesture-guide-control {
+  min-width: 84px;
+  color: #e8a13d;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gesture-guide-does {
+  color: #cfcfdc;
+  font-size: 13px;
+}
+
 /* ---- Readouts ---- */
 
 #chordDisplay {
