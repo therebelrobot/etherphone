@@ -40,11 +40,12 @@ Etherphone started as a **chorder**: a chord exists while a hand holds a shape a
 stops when the hand drops. It is now becoming a performance machine. It has a second
 voice (**Mono** — melody, lead, bassline), a real **clock**, and a **looper** that
 records what the hands meant and plays it back as layers — a chord bed with a melody
-over it — that can be dropped out and brought back mid-performance. Chords, Mono, and
-every setting are reachable by gesture, without the mouse.
+over it — that can be overdubbed, dropped out, brought back, and mixed mid-performance.
+Chords, Mono, and every setting are reachable by gesture, without the mouse. The gesture
+language itself is yours to rewrite, and a take can leave the page as a file.
 
-What is still missing is rhythm, the microphone, a way to take a loop away with you, and a
-way to record a finished performance to a file.
+What is still missing is rhythm, the microphone, and a way to record a finished
+performance to a file.
 
 The gap is mapped, not guessed. The RFCs group the work into waves, and the first two are
 in:
@@ -63,10 +64,14 @@ Wave 3  Layers          voice, tuning, percussion          RFCs #9, #11, #10
 | **3 — Layers**        | Open       | Microphone looping (#9), tuned voice loops (#11), and percussion (#10)                                 | These are layers on the spine: same clock, same loop windows, same gesture control. Designing them against three separate clocks would be a mistake.          |
 | **Capture**           | Open       | Render a performance — audio, and ideally the video overlay — to a file ready to post                  | The thing that makes it "perform into recording". It taps the master bus, so the loops, voice, and drums of the waves above arrive in the same mix for free.  |
 
-A wave landing is not an RFC closing. Each of the first two is still open for what was
-deliberately left out: the gesture-map **editor** (#8) and the control-mode guide (#4),
-mono articulation and a harp pluck (#7), and the looper's **overdub**, **per-layer gain**
-and **export** (#2).
+A wave landing is not an RFC closing, and for a while that left real work behind: the
+gesture-map **editor** (#8) and the control-mode guide (#4), mono articulation and a harp
+pluck (#7), and the looper's **overdub**, **per-layer gain**, **export**, and
+**sample-accurate scheduler** (#2). Those are now in as well — along with import, the
+configurable arm line, and reaching tempo and loop length by gesture, which were gaps
+nobody had written down.
+
+What is left is wave 3 and capture, below.
 
 The umbrella issue is [#1, "Etherphone as a performance machine"](https://github.com/therebelrobot/etherphone/issues/1).
 The RFCs are deliberately written as _requests for comments_ — a problem, a direction,
@@ -88,11 +93,24 @@ will load the app but cannot reach the camera.
 - Left hand chooses the chord and, by tilt, whether it is major or minor
 - Right hand chooses the voicing and the expression
 - A picker of gesture maps — Classic, Triad, and Pentatonic — remembered between visits
+- **Build your own map**: seven shapes, each set to a degree or to nothing, edited from
+  the menu and shareable as a link. The cheat sheet lists the silent shapes too
 - A **Mono** mode where the left hand's height plays a single note: melody, lead, or bassline
-- Three mono styles — quantised, glide, and harp — so a sweep up the frame is a scale run
-- A **gesture menu**: close both hands to fan one out around your hand, push out to point, dwell to choose. It reaches the key, the instrument, the transport, and the layers too
-- A **looper**: record layers — a chord bed, a melody, a second chord part — drop any of them out and back in without stopping, and redo one by name. It can be turned off entirely in Settings
+- Three mono styles — quantised, glide, and harp, which now plucks and decays like a string
+- Mono expression on the right hand: height is volume, tilt is filter, thumb drops an
+  octave for a bassline, and the finger count widens the vibrato
+- A **gesture menu**: close both hands to fan one out around your hand, push out to point,
+  dwell to choose. It reaches the key, instrument, tempo, loop length, transport, layers,
+  every setting, and the map editor
+- The **cheat sheet** describes the control vocabulary as well as the playing one
+- A **looper**: record layers — a chord bed, a melody, a second chord part — overdub
+  another pass, drop any of them out and back in without stopping, set each one's level,
+  and redo one by name. It can be turned off entirely in Settings
 - **Transport by fist**: close one hand and flick it — up records, down stops, right plays, left clears
+- Loop events are **scheduled ahead on the audio clock**, so an onset lands on the beat
+  rather than on whichever frame noticed it
+- Save a take to a file and load it back; the tempo, loop length, and per-layer mix travel
+  with it
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -100,8 +118,6 @@ will load the app but cannot reach the camera.
 
 **Next, in the order the RFCs argue for**
 
-- Build your own gesture map, by gesture rather than by mouse
-- Finish the looper: overdub, per-layer gain, and taking a take away with you
 - Capture the microphone and loop voice as a layer
 - Tune a captured voice loop to the key without changing its timing
 - Percussion: live hits, a step grid, and possibly a small pattern notation
@@ -458,9 +474,23 @@ for the top of the loop.
 
 Redoing a layer is asked for by name. The **Layers** menu lists them; choosing one hands
 it over, and the menu then offers **Mute** (drop it out and back in without stopping),
-**Rewrite** (record that layer again) and **Clear** (throw it away). The destructive two
-are deliberately a second step — and a cancelled rewrite puts back the take it displaced
-rather than losing it. The buttons under the transport mute a layer in one click.
+**Louder** / **Quieter** (a level, in tenths, because a hand cannot land on a fader),
+**Overdub** (record another pass _into_ the same layer, with the layer still sounding so
+you can play along with it), **Rewrite** (record that layer again from nothing) and
+**Clear** (throw it away). The destructive two are deliberately a second step — and a
+cancelled rewrite puts back the take it displaced rather than losing it. The buttons and
+faders under the transport do the same in one click.
+
+Overdub and rewrite are not the same control on purpose. Rewrite is _that pass was
+wrong_; overdub is _now the other hand_. A rest in an overdubbed pass means "I played
+nothing here", not "silence what is underneath", so adding a part never erases one.
+
+**A take can leave the page.** **Save take** (in the Transport menu, or the button under
+the transport) writes the loop as JSON: every layer, its events, its level, and the tempo
+and loop length it was played against. **Load** reads one back, replacing what is in play
+and adopting the take's own grid rather than the one currently selected — a take replayed
+against the wrong grid is out of phase with itself. A malformed file is refused with a
+reason in the transport readout rather than half-loaded.
 
 **Stop never costs a take.** A recording it catches part-way is _closed_ where it is
 rather than discarded — a partial take is a perfectly good one, since its last note holds
@@ -488,6 +518,12 @@ Under it all is `Transport` (`src/audio/transport.ts`): tempo and bar lines, cou
 beats against the `AudioContext`'s own clock rather than the frame loop, so the grid
 does not drift when inference is heavy. The looper owns no clock of its own, and
 neither will the percussion sequencer — that is the point of it being its own module.
+
+Events are **scheduled ahead** rather than fired on the frame that notices them
+(`Looper.schedule`, 50 ms of lookahead). Each one carries the context time it should
+sound at, and `Voice.playAt` hands that time to the audio thread — so an onset lands on
+the sample it belongs to instead of up to a frame late. A sustained chord forgives that
+error; a drum hit does not, which is why this had to exist before percussion.
 
 #### The transport, by fist
 
