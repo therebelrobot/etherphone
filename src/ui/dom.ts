@@ -33,6 +33,7 @@ export interface AppElements {
   readonly stopButton: HTMLButtonElement;
   readonly clearButton: HTMLButtonElement;
   readonly transportDisplay: HTMLElement;
+  readonly modeDisplay: HTMLElement;
   readonly layerControls: HTMLElement;
   readonly takeControls: HTMLElement;
   readonly exportTakeButton: HTMLButtonElement;
@@ -90,6 +91,7 @@ export function getAppElements(): AppElements {
     stopButton: requireElement<HTMLButtonElement>("#stopButton"),
     clearButton: requireElement<HTMLButtonElement>("#clearButton"),
     transportDisplay: requireElement("#transportDisplay"),
+    modeDisplay: requireElement("#modeDisplay"),
     layerControls: requireElement("#layerControls"),
     takeControls: requireElement("#takeControls"),
     exportTakeButton: requireElement<HTMLButtonElement>("#exportTakeButton"),

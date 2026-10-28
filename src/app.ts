@@ -312,6 +312,7 @@ export class GestureSynthApp {
       this.els.chordDisplay,
       this.els.qualityDisplay,
       this.els.filterDisplay,
+      this.els.modeDisplay,
       new VolumeMeter(this.els.volumeBars),
     );
 
@@ -327,6 +328,7 @@ export class GestureSynthApp {
     this.tonicFrequency = Number(this.els.keySelect.value);
     this.keyName = readKeyName(this.els.keySelect);
     this.mode = restoreSelect(this.els.modeSelect, MODE_STORAGE_KEY) as InstrumentMode;
+    this.hud.setMode(this.mode);
     this.monoStyle = restoreSelect(this.els.monoStyleSelect, MONO_STYLE_STORAGE_KEY) as MonoStyle;
     this.singleHanded = this.readStoredSingleHanded();
     this.looping = this.readStoredLooping();
@@ -948,6 +950,7 @@ export class GestureSynthApp {
 
     this.mode = mode;
     this.els.modeSelect.value = mode;
+    this.hud.setMode(mode);
     remember(MODE_STORAGE_KEY, mode);
     this.applyModeVisibility();
 

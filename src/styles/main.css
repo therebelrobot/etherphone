@@ -431,6 +431,23 @@ body {
   pointer-events: none;
 }
 
+/*
+ * Which instrument is in play. Quieter than the filter, because it is a state
+ * rather than a value — you check it, you do not read it continuously.
+ */
+#modeDisplay {
+  position: absolute;
+  top: 130px;
+  right: 12px;
+  color: #8a8a9d;
+  font-family: monospace;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: right;
+  pointer-events: none;
+}
+
 /* ---- Help modal ---- */
 
 #helpModal.hidden {
