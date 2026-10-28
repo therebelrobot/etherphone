@@ -53,10 +53,47 @@ export function degreePositionAtHeight(height: number): number {
   return 1 + (1 - travelled) * PITCH_SPAN_DEGREES;
 }
 
+/**
+ * Pulls a continuous position toward the nearest degree, without making it step.
+ *
+ * This is snap assistance: a *magnetic* mapping rather than a quantised one. The
+ * pitch stays continuous — you can still slide — but the mapping is flattened
+ * near each note and steepened between them, so a hand that is roughly in the
+ * right place lands exactly in tune.
+ *
+ *     warped = round(p) + (d - s·sin(2πd) / 2π),  where d = p - round(p)
+ *
+ * Three properties, each of which has a test, because a bad warp here is an
+ * instrument that jumps backwards as your hand moves forwards:
+ *
+ * - **Monotonic for every `s <= 1`.** The derivative is `1 - s·cos(2πd)`, which
+ *   is never negative in that range, so the pitch can never reverse.
+ * - **The endpoints do not move.** `d = ±0.5` is unchanged, so octave
+ *   boundaries stay where they were and a note never drifts off the scale.
+ * - **`s = 0` is the identity**, which is the glide the instrument already had.
+ *
+ * It is deliberately *not* quantisation at any strength: the result is still
+ * continuous, so the two styles meet in feel and never in behaviour.
+ */
+export function snapPosition(position: number, strength: number): number {
+  const amount = Math.max(0, Math.min(1, strength));
+  if (amount === 0) return position;
+
+  const nearest = Math.round(position);
+  const offset = position - nearest;
+
+  return nearest + offset - (amount * Math.sin(2 * Math.PI * offset)) / (2 * Math.PI);
+}
+
 /** The frequency at a continuous degree position, for the glide style. */
-export function frequencyAtPosition(position: number, tonicFrequency: number): number {
-  const lower = Math.floor(position);
-  const mix = position - lower;
+export function frequencyAtPosition(
+  position: number,
+  tonicFrequency: number,
+  snapStrength = 0,
+): number {
+  const warped = snapPosition(position, snapStrength);
+  const lower = Math.floor(warped);
+  const mix = warped - lower;
 
   const from = frequencyForDegree(lower, tonicFrequency);
   const to = frequencyForDegree(lower + 1, tonicFrequency);
@@ -102,6 +139,21 @@ export function monoNumeral(reading: MonoReading): Numeral {
   return DEGREE_NUMERALS[(reading.degree - 1) % 7];
 }
 
+/** How the snap-strength setting names each step. */
+export function snapLabel(strength: number): string {
+  if (strength <= 0) return "off";
+  if (strength >= 1) return "firm";
+  return "light";
+}
+
+/** What the expression hand and the settings say about a mono frame. */
+export interface MonoFrameOptions {
+  /** Drops the whole reading an octave, for a bassline. */
+  readonly octaveDown?: boolean;
+  /** How hard to pull a glide toward the nearest note, 0..1. */
+  readonly snapStrength?: number;
+}
+
 /**
  * Reads the pitch hand, frame by frame.
  *
@@ -119,16 +171,17 @@ export class MonoReader {
   /**
    * Reads one frame. Returns `null` when there is no pitch hand.
    *
-   * `octaveDown` drops the whole reading an octave, which is the bassline case:
-   * the same hand positions, one register lower. It is the expression hand's
-   * thumb, the same control that drops a chord voicing — the instrument should
-   * not have two different "make it lower" gestures.
+   * The two options are the expression hand's contributions rather than the
+   * pitch hand's: `octaveDown` is its thumb (the same control that drops a chord
+   * voicing — the instrument should not have two different "make it lower"
+   * gestures) and `snapStrength` is the setting for how hard a glide is pulled
+   * toward the nearest note.
    */
   update(
     height: number | null,
     style: MonoStyle,
     tonicFrequency: number,
-    octaveDown = false,
+    options: MonoFrameOptions = {},
   ): MonoReading | null {
     if (height === null) {
       this.lastDegree = null;
@@ -136,6 +189,10 @@ export class MonoReader {
     }
 
     const position = degreePositionAtHeight(height);
+
+    // The degree is the nearest one either way: snap assistance changes the
+    // pitch between degrees, not which degree is nearest, so a snap can never
+    // change when a note counts as new.
     const degree = Math.round(position);
     const isNewDegree = degree !== this.lastDegree;
 
@@ -143,11 +200,11 @@ export class MonoReader {
 
     const raw =
       style === "glide"
-        ? frequencyAtPosition(position, tonicFrequency)
+        ? frequencyAtPosition(position, tonicFrequency, options.snapStrength ?? 0)
         : frequencyForDegree(degree, tonicFrequency);
 
     return {
-      frequency: octaveDown ? raw / 2 : raw,
+      frequency: options.octaveDown ? raw / 2 : raw,
       degree,
       octave: Math.floor((degree - 1) / 7),
       isNewDegree,

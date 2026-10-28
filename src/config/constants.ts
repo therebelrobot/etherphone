@@ -56,6 +56,20 @@ export const MONO_PITCH_BOTTOM_Y = 0.9;
 /** Octaves the pitch hand spans, from the bottom of its band to the top. */
 export const MONO_OCTAVE_SPAN = 2;
 
+/**
+ * Snap strengths the setting offers, and the default.
+ *
+ * A *constant with a Settings override*, which is how RFC #7 lists it. Three
+ * steps rather than a slider: this is a feel, and a feel is easier to recognise
+ * from three named options than from a number you have to find by ear twice.
+ * The default is the middle one — half-pull, so a glide still slides.
+ */
+export const MONO_SNAP_STRENGTH_DEFAULT = 0.5;
+export const MONO_SNAP_CHOICES = [0, 0.5, 1] as const;
+
+/** Where the snap strength is remembered between visits. */
+export const SNAP_STRENGTH_STORAGE_KEY = "etherphone.snap-strength";
+
 /** Radius of the hand-skeleton dots drawn onto the overlay, in canvas pixels. */
 export const LANDMARK_DOT_RADIUS = 4;
 

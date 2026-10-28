@@ -28,7 +28,10 @@ import {
   HARMONY_HAND_STORAGE_KEY,
   LOOPING_STORAGE_KEY,
   MODE_STORAGE_KEY,
+  MONO_SNAP_CHOICES,
+  MONO_SNAP_STRENGTH_DEFAULT,
   MONO_STYLE_STORAGE_KEY,
+  SNAP_STRENGTH_STORAGE_KEY,
   PROJECT_NAME,
   SINGLE_HANDED_STORAGE_KEY,
   TEMPO_STORAGE_KEY,
@@ -57,7 +60,7 @@ import {
 import { handName, HANDS, otherHand, parseHarmonyHand } from "./music/hands";
 import { describeLooper, GAIN_STEP, Looper } from "./music/looper";
 import type { LoopLayerSeed, LoopTrack, TrackId } from "./music/looper";
-import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
+import { MonoReader, monoNoteLabel, monoNumeral, snapLabel } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
 import { resolveTakeEvent } from "./music/take";
 import type { ResolvedEvent } from "./music/take";
@@ -132,6 +135,9 @@ const ARM_UNIT_ID = "arm-unit";
 
 /** The id of the entry that swaps which hand plays the chord vocabulary. */
 const HARMONY_HAND_ID = "harmony-hand";
+
+/** The id of the entry that steps the glide's snap strength. */
+const SNAP_STRENGTH_ID = "snap-strength";
 
 /**
  * The id of the "edit my map" entry in the vocabulary menu.
@@ -365,6 +371,7 @@ export class GestureSynthApp {
     this.singleHanded = this.readStoredSingleHanded();
     this.looping = this.readStoredLooping();
     this.setArmUnit(this.readStoredArmUnit());
+    this.snapStrength = this.readStoredSnapStrength();
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
     this.renderTransportChoices();
@@ -924,6 +931,27 @@ export class GestureSynthApp {
     this.armUnit = unit;
     this.transport.setArmUnit(unit);
     remember(ARM_UNIT_STORAGE_KEY, unit);
+  }
+
+  /** Reads the remembered snap strength, ignoring anything that is not a choice. */
+  private readStoredSnapStrength(): number {
+    try {
+      const stored = Number(window.localStorage.getItem(SNAP_STRENGTH_STORAGE_KEY));
+      return MONO_SNAP_CHOICES.find((choice) => choice === stored) ?? MONO_SNAP_STRENGTH_DEFAULT;
+    } catch {
+      return MONO_SNAP_STRENGTH_DEFAULT;
+    }
+  }
+
+  /** Steps the snap strength to the next choice, and remembers it. */
+  private nextSnapStrength(): void {
+    const index = MONO_SNAP_CHOICES.indexOf(
+      this.snapStrength as (typeof MONO_SNAP_CHOICES)[number],
+    );
+    const next = MONO_SNAP_CHOICES[(index + 1) % MONO_SNAP_CHOICES.length] ?? 0;
+
+    this.snapStrength = next;
+    remember(SNAP_STRENGTH_STORAGE_KEY, String(next));
   }
 
   /** Reads the remembered looping setting. On unless it was turned off. */
@@ -1540,7 +1568,10 @@ export class GestureSynthApp {
       pitch ? getHandHeight(pitch) : null,
       this.monoStyle,
       this.tonicFrequency,
-      expression !== null && isThumbExtended(expression, expressionHand),
+      {
+        octaveDown: expression !== null && isThumbExtended(expression, expressionHand),
+        snapStrength: this.snapStrength,
+      },
     );
 
     // A recorded melody is its degrees, not its frequencies, so it transposes
@@ -1944,10 +1975,19 @@ export class GestureSynthApp {
         keepsMenuOpen: true,
       };
 
+      // Snap assistance on a glide. Only meaningful in mono, but listed either
+      // way so it is where a player looks for it rather than appearing later.
+      const snapStrength: MenuOption = {
+        id: SNAP_STRENGTH_ID,
+        label: `Snap: ${snapLabel(this.snapStrength)}`,
+        keepsMenuOpen: true,
+      };
+
       const items: MenuOption[] = [
         { id: "chord", label: "Chords", keepsMenuOpen: true },
         { id: "mono", label: "Mono", keepsMenuOpen: true },
         harmonyHand,
+        snapStrength,
         oneHanded,
         looping,
       ];
@@ -2067,6 +2107,11 @@ export class GestureSynthApp {
 
       if (choice.id === HARMONY_HAND_ID) {
         this.setHarmonyHand(otherHand(this.harmonyHand));
+        return;
+      }
+
+      if (choice.id === SNAP_STRENGTH_ID) {
+        this.nextSnapStrength();
         return;
       }
 
@@ -2216,6 +2261,9 @@ export class GestureSynthApp {
 
   /** How long a recording waits to begin: the next bar line, or the next beat. */
   private armUnit: ArmUnit = "bar";
+
+  /** How hard a glide is pulled toward the nearest note, from the snap setting. */
+  private snapStrength: number = MONO_SNAP_STRENGTH_DEFAULT;
 
   /** The player's own map, once it exists. `null` until Custom is first chosen. */
   private customSlots: CustomMapSlots | null = null;

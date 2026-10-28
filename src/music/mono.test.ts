@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { MONO_OCTAVE_SPAN, MONO_PITCH_BOTTOM_Y, MONO_PITCH_TOP_Y } from "../config/constants";
 import {
+  MonoReader,
+  PITCH_SPAN_DEGREES,
   degreePositionAtHeight,
   frequencyAtPosition,
   frequencyForDegree,
-  MonoReader,
   monoNoteLabel,
   monoNumeral,
-  PITCH_SPAN_DEGREES,
+  snapLabel,
+  snapPosition,
 } from "./mono";
 
 /** A tonic that is not one of the three the engine drops an octave. */
@@ -107,7 +109,9 @@ describe("MonoReader", () => {
 
   it("drops the whole reading an octave when the thumb asks for it", () => {
     // The bassline case: the same hand positions, one register lower.
-    const reading = new MonoReader().update(heightForPosition(1.4), "quantised", C4, true);
+    const reading = new MonoReader().update(heightForPosition(1.4), "quantised", C4, {
+      octaveDown: true,
+    });
 
     expect(reading?.frequency).toBeCloseTo(frequencyForDegree(1, C4) / 2, 5);
     // The degree is unchanged: it is the register that moved, not the note.
@@ -116,13 +120,17 @@ describe("MonoReader", () => {
 
   it("drops a glide too, so the octave control does not break the slide", () => {
     const plain = new MonoReader().update(heightForPosition(1.4), "glide", C4);
-    const dropped = new MonoReader().update(heightForPosition(1.4), "glide", C4, true);
+    const dropped = new MonoReader().update(heightForPosition(1.4), "glide", C4, {
+      octaveDown: true,
+    });
 
     expect(dropped?.frequency).toBeCloseTo((plain?.frequency ?? 0) / 2, 5);
   });
 
   it("is unchanged when the thumb is not extended", () => {
-    const plain = new MonoReader().update(heightForPosition(1.4), "quantised", C4, false);
+    const plain = new MonoReader().update(heightForPosition(1.4), "quantised", C4, {
+      octaveDown: false,
+    });
 
     expect(plain?.frequency).toBeCloseTo(frequencyForDegree(1, C4), 5);
   });
@@ -196,5 +204,115 @@ describe("monoNumeral", () => {
     expect(monoNumeral({ frequency: 0, degree: 1, octave: 0, isNewDegree: true })).toBe("I");
     expect(monoNumeral({ frequency: 0, degree: 7, octave: 0, isNewDegree: true })).toBe("VII");
     expect(monoNumeral({ frequency: 0, degree: 8, octave: 1, isNewDegree: true })).toBe("I");
+  });
+});
+
+describe("snapPosition", () => {
+  /** A sweep across two octaves, which is more than the hand can reach. */
+  const sweep = Array.from({ length: 400 }, (_, i) => 1 + (i / 400) * 14);
+
+  it("is the identity at zero, so the glide that existed still exists", () => {
+    for (const position of sweep) expect(snapPosition(position, 0)).toBe(position);
+  });
+
+  it("leaves the notes themselves exactly where they were", () => {
+    for (const degree of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      expect(snapPosition(degree, 1)).toBeCloseTo(degree, 10);
+    }
+  });
+
+  it("leaves the midpoints alone, so octave boundaries do not drift", () => {
+    // If the endpoints moved, a note at the top of the range would creep off the
+    // scale, which is the kind of bug that only shows up at the extremes.
+    expect(snapPosition(1.5, 1)).toBeCloseTo(1.5, 10);
+    expect(snapPosition(8.5, 1)).toBeCloseTo(8.5, 10);
+  });
+
+  it("pulls toward the nearest note", () => {
+    for (const strength of [0.25, 0.5, 1]) {
+      for (const position of [1.2, 2.35, 3.45, 4.1]) {
+        const away = Math.abs(position - Math.round(position));
+        const warpedAway = Math.abs(snapPosition(position, strength) - Math.round(position));
+
+        expect(warpedAway).toBeLessThan(away);
+      }
+    }
+  });
+
+  it("never moves backwards, at any strength — the property that matters", () => {
+    // A non-monotonic warp is an instrument that jumps down as the hand moves
+    // up. The derivative is 1 - s·cos(2πd), so this holds for every s <= 1, and
+    // this test is what would catch it if the formula ever changed.
+    for (const strength of [0, 0.25, 0.5, 0.75, 1]) {
+      let previous = -Infinity;
+
+      for (const position of sweep) {
+        const warped = snapPosition(position, strength);
+        expect(warped).toBeGreaterThan(previous);
+        previous = warped;
+      }
+    }
+  });
+
+  it("clamps a strength outside the range rather than going non-monotonic", () => {
+    expect(snapPosition(1.2, 5)).toBeCloseTo(snapPosition(1.2, 1), 10);
+    expect(snapPosition(1.2, -3)).toBeCloseTo(1.2, 10);
+  });
+
+  it("is at its flattest exactly on a note, which is what makes it a detent", () => {
+    const spread = (strength: number) =>
+      Math.abs(snapPosition(1.01, strength) - snapPosition(1, strength));
+
+    expect(spread(1)).toBeLessThan(spread(0));
+  });
+});
+
+describe("frequencyAtPosition with snap", () => {
+  it("lands closer to the note than a plain glide does", () => {
+    const plain = frequencyAtPosition(1.3, C4);
+    const snapped = frequencyAtPosition(1.3, C4, 1);
+    const target = frequencyForDegree(1, C4);
+
+    expect(Math.abs(snapped - target)).toBeLessThan(Math.abs(plain - target));
+  });
+
+  it("is exactly the note frequency when the position is a note", () => {
+    expect(frequencyAtPosition(2, C4, 1)).toBeCloseTo(frequencyForDegree(2, C4), 6);
+  });
+
+  it("rises monotonically in frequency, so a slide never doubles back", () => {
+    let previous = -Infinity;
+
+    for (let position = 1; position <= 8; position += 0.05) {
+      const frequency = frequencyAtPosition(position, C4, 1);
+      expect(frequency).toBeGreaterThan(previous);
+      previous = frequency;
+    }
+  });
+});
+
+describe("the snap setting", () => {
+  it("names its three steps", () => {
+    expect(snapLabel(0)).toBe("off");
+    expect(snapLabel(0.5)).toBe("light");
+    expect(snapLabel(1)).toBe("firm");
+  });
+
+  it("does not touch a quantised reading, which is already on the note", () => {
+    const plain = new MonoReader().update(heightForPosition(1.4), "quantised", C4);
+    const snapped = new MonoReader().update(heightForPosition(1.4), "quantised", C4, {
+      snapStrength: 1,
+    });
+
+    expect(snapped?.frequency).toBe(plain?.frequency);
+  });
+
+  it("reaches the Reader through the glide style", () => {
+    const plain = new MonoReader().update(heightForPosition(1.4), "glide", C4);
+    const snapped = new MonoReader().update(heightForPosition(1.4), "glide", C4, {
+      snapStrength: 1,
+    });
+
+    expect(snapped?.frequency).not.toBe(plain?.frequency);
   });
 });
