@@ -173,6 +173,18 @@ export class Looper {
     return id === null ? null : (this.tracksValue.get(id)?.label ?? null);
   }
 
+  /**
+   * What kind of recording is armed or running.
+   *
+   * Exposed because the *state* alone cannot tell a player what is about to
+   * happen: a rewrite and an overdub are both "recording", and one of them is
+   * about to erase a part. The RFC asks for overdubbing to be a visible state
+   * and this is how the readout can say it.
+   */
+  get recordingKind(): RecordKind | null {
+    return this.recording?.kind ?? this.armed?.kind ?? null;
+  }
+
   /** Beats until an armed recording begins, for the count-in readout. */
   countdownBeats(ctxTime: number): number {
     if (!this.armed) return 0;
@@ -668,21 +680,29 @@ export interface LooperStatus {
   readonly recordingLabel?: string | null;
   /** Beats until an armed recording begins. */
   readonly countdownBeats?: number;
+  /** Which kind of recording is armed or running, so the readout can name it. */
+  readonly recordKind?: RecordKind | null;
 }
 
 /** A short status line for the transport readout. */
 export function describeLooper(status: LooperStatus): string {
   const bars = `${status.loopBars} bar${status.loopBars === 1 ? "" : "s"}`;
 
+  // An overdub and a rewrite are both "recording" to the state machine, and one
+  // of them is about to erase a part. Naming it is the difference between the
+  // player knowing and finding out afterwards.
+  const isOverdub = status.recordKind === "overdub";
+
   switch (status.state) {
     case "armed": {
       // A count-in the player can read, rather than a wait they have to guess at.
       const beats = Math.ceil(status.countdownBeats ?? 0);
+      const what = isOverdub ? "Overdub" : "Rec";
 
-      return beats > 0 ? `Armed · Rec in ${beats}` : "Armed…";
+      return beats > 0 ? `Armed · ${what} in ${beats}` : `Armed · ${what}…`;
     }
     case "recording":
-      return `Recording · ${status.recordingLabel ?? bars}`;
+      return `${isOverdub ? "Overdubbing" : "Recording"} · ${status.recordingLabel ?? bars}`;
     case "playing":
       return `Looping · ${bars}`;
     default:

@@ -1249,6 +1249,7 @@ export class GestureSynthApp {
           hasTake: this.looper.hasTake,
           recordingLabel: this.looper.recordingLabel,
           countdownBeats: this.looper.countdownBeats(ctxTime),
+          recordKind: this.looper.recordingKind,
         });
 
     this.els.recordButton.classList.toggle("active", state === "recording" || state === "armed");

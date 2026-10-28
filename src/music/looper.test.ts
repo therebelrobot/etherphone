@@ -542,7 +542,45 @@ describe("describeLooper", () => {
     expect(describeLooper({ state: "armed", loopBars: 4, hasTake: false, countdownBeats: 3 })).toBe(
       "Armed · Rec in 3",
     );
-    expect(describeLooper({ state: "armed", loopBars: 4, hasTake: false })).toBe("Armed…");
+    expect(describeLooper({ state: "armed", loopBars: 4, hasTake: false })).toBe("Armed · Rec…");
+  });
+
+  it("says when an armed recording is an overdub, before it starts", () => {
+    // An overdub and a rewrite are both "armed", and one of them is about to
+    // erase a part — so the readout has to say which while there is still time.
+    expect(
+      describeLooper({
+        state: "armed",
+        loopBars: 4,
+        hasTake: true,
+        countdownBeats: 2,
+        recordKind: "overdub",
+      }),
+    ).toBe("Armed · Overdub in 2");
+  });
+
+  it("says when a running recording is an overdub", () => {
+    expect(
+      describeLooper({
+        state: "recording",
+        loopBars: 4,
+        hasTake: true,
+        recordingLabel: "Chords 1",
+        recordKind: "overdub",
+      }),
+    ).toBe("Overdubbing · Chords 1");
+  });
+
+  it("still calls a rewrite a plain recording", () => {
+    expect(
+      describeLooper({
+        state: "recording",
+        loopBars: 4,
+        hasTake: true,
+        recordingLabel: "Chords 1",
+        recordKind: "rewrite",
+      }),
+    ).toBe("Recording · Chords 1");
   });
 
   it("names the layer being recorded", () => {
