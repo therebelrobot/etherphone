@@ -265,6 +265,16 @@ export const AUDIO = {
   /** Samples the analyser reads per cycle; longer cycles are decimated to this. */
   wavetableAnalysisSamples: 2048,
 
+  /**
+   * Vibrato, fed into an oscillator's `detune` (which is measured in cents).
+   *
+   * 5.2 Hz is a singer's rate rather than an effect's. Depth is per extended
+   * finger on the expression hand, so an open hand is a wide shake and a closed
+   * one is dead straight.
+   */
+  vibratoRateHz: 5.2,
+  vibratoCentsPerFinger: 9,
+
   /** Ramp from silence when a sampled note starts, in seconds. */
   samplerAttackSeconds: 0.008,
   /** Ramp to silence when a sampled note stops, in seconds. */

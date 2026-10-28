@@ -19,6 +19,7 @@ import { DEFAULT_VOICE_ID } from "./audio/voices";
 import {
   ARM_UNIT_CHOICES,
   ARM_UNIT_STORAGE_KEY,
+  AUDIO,
   BARS_STORAGE_KEY,
   CUSTOM_MAP_STORAGE_KEY,
   GESTURE_MAP_STORAGE_KEY,
@@ -1162,6 +1163,17 @@ export class GestureSynthApp {
     } else {
       this.synth.setVolume(0);
     }
+
+    // In mono there is no voicing to choose, so the expression hand's finger
+    // count carries vibrato instead. That is the RFC's reading of what the hand
+    // should do once it stops picking voicings: octave, filter, vibrato, and
+    // articulation. Chord mode keeps the count for quality, hence the zero.
+    this.synth.setVibrato(
+      this.mode === "mono" && Right
+        ? getRightHandQualityIndex(Right) * AUDIO.vibratoCentsPerFinger
+        : 0,
+      AUDIO.vibratoRateHz,
+    );
 
     if (this.mode === "mono") {
       this.updateMonoFrame(Left, volume, tilt, ctxTime);

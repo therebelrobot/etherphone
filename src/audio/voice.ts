@@ -60,6 +60,14 @@ export interface Voice {
    * same way {@link play} does.
    */
   retune?(freqs: number[]): boolean;
+  /**
+   * Sets the width of the sounding note's vibrato, in cents.
+   *
+   * Optional, and the same bargain as {@link retune}: a sampled drum has no
+   * pitch to shake, so a voice that cannot vibrate simply omits this and the
+   * instrument plays straight. `depthCents` of zero means "no vibrato".
+   */
+  setVibrato?(depthCents: number, rateHz: number): void;
   /** Silences every sounding note, leaving the graph connected. */
   release(): void;
   /** Releases and tears down the graph. The voice is not reused afterwards. */

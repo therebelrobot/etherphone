@@ -26,6 +26,17 @@ export class OscillatorBank implements Voice {
   /** Frequency key of the currently sounding notes, for the change check. */
   private currentKey: string | null = null;
 
+  /**
+   * The shared vibrato: one LFO feeding every oscillator's `detune`.
+   *
+   * One LFO rather than one per note, so a chord shakes together — three
+   * vibratos at slightly different phases is a chorus, not a vibrato. It runs
+   * from the first request and its *depth* is the control, because starting and
+   * stopping an oscillator to change a depth would click.
+   */
+  private vibratoLfo: OscillatorNode | null = null;
+  private vibratoDepth: GainNode | null = null;
+
   constructor(private readonly options: OscillatorBankOptions) {}
 
   connect(ctx: AudioContext, destination: AudioNode): void {
@@ -47,6 +58,9 @@ export class OscillatorBank implements Voice {
       this.options.configure(oscillator);
       oscillator.frequency.value = freq;
       oscillator.connect(this.destination!);
+      // New notes join the vibrato that is already running, so a chord held
+      // through a chord change does not change character mid-note.
+      this.vibratoDepth?.connect(oscillator.detune);
       oscillator.start();
       return oscillator;
     });
@@ -83,10 +97,67 @@ export class OscillatorBank implements Voice {
     return true;
   }
 
+  /**
+   * Sets the vibrato width, in cents, and its rate.
+   *
+   * Depth is a gain on the LFO's output feeding `detune`, which is measured in
+   * cents — so the number here *is* the width, with no conversion. Ramped rather
+   * than set, so widening it mid-note is a swell instead of a step.
+   */
+  setVibrato(depthCents: number, rateHz: number): void {
+    if (!this.ctx) return;
+
+    const { lfo, depth } = this.ensureVibrato();
+    const now = this.ctx.currentTime;
+
+    depth.gain.setTargetAtTime(Math.max(0, depthCents), now, AUDIO.smoothingSeconds);
+    lfo.frequency.setTargetAtTime(Math.max(0.1, rateHz), now, AUDIO.smoothingSeconds);
+  }
+
   dispose(): void {
     this.release();
+    this.stopVibrato();
     this.ctx = null;
     this.destination = null;
+  }
+
+  /** Builds the LFO on first use, and wires it to whatever is already sounding. */
+  private ensureVibrato(): { lfo: OscillatorNode; depth: GainNode } {
+    if (this.vibratoLfo && this.vibratoDepth) {
+      return { lfo: this.vibratoLfo, depth: this.vibratoDepth };
+    }
+
+    const lfo = this.ctx!.createOscillator();
+    const depth = this.ctx!.createGain();
+
+    lfo.type = "sine";
+    lfo.frequency.value = AUDIO.vibratoRateHz;
+    depth.gain.value = 0;
+
+    lfo.connect(depth);
+    for (const oscillator of this.oscillators) depth.connect(oscillator.detune);
+    lfo.start();
+
+    this.vibratoLfo = lfo;
+    this.vibratoDepth = depth;
+
+    return { lfo, depth };
+  }
+
+  /** Tears the LFO down with the voice. */
+  private stopVibrato(): void {
+    if (this.vibratoLfo) {
+      try {
+        this.vibratoLfo.stop();
+        this.vibratoLfo.disconnect();
+      } catch {
+        /* already stopped */
+      }
+    }
+
+    this.vibratoDepth?.disconnect();
+    this.vibratoLfo = null;
+    this.vibratoDepth = null;
   }
 
   /** Stops and drops every oscillator without touching the context. */

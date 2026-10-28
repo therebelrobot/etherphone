@@ -28,6 +28,9 @@ export class SynthEngine {
 
   private definition: VoiceDefinition | null = null;
   private voice: Voice | null = null;
+
+  /** The vibrato depth last handed to the voice, so repeats are skipped. */
+  private currentVibrato = 0;
   private currentKey: string | null = null;
 
   /**
@@ -188,6 +191,22 @@ export class SynthEngine {
     if (settled) {
       this.currentKey = key;
     }
+  }
+
+  /**
+   * Sets how wide the sounding note's vibrato is.
+   *
+   * A voice is free not to have one — the same bargain `retune` makes — so an
+   * instrument that cannot shake simply plays straight rather than failing.
+   * Guarded on change because this is called every frame and an AudioParam does
+   * not need sixty identical ramps a second.
+   */
+  setVibrato(depthCents: number, rateHz: number): void {
+    if (!this.voice?.setVibrato) return;
+    if (depthCents === this.currentVibrato) return;
+
+    this.currentVibrato = depthCents;
+    this.voice.setVibrato(depthCents, rateHz);
   }
 
   /** Silences and tears down every voice. */
