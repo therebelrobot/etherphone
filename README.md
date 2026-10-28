@@ -121,6 +121,8 @@ will load the app but cannot reach the camera.
   with it
 - **Render the loop to a WAV** offline — faster than real time, independent of the tab, and
   transposed to whatever key is selected
+- **Record a voice loop** from the microphone and play it back as an instrument. Captured
+  on this device only — nothing is uploaded, and nothing is monitored through your speakers
 - A picker of instruments: oscillators, wavetables, and sampled sounds
 - Load your own wavetables and samples as new instruments
 - Real-time hand tracking with MediaPipe, synthesis with the Web Audio API
@@ -232,7 +234,16 @@ src/
     voicings.ts            The four right-hand voicings per mode, each with a label
                            and a note selector, so readout and audio cannot drift.
 
+  media.ts                 Permission failures for the camera and the microphone, shared
+                           so the two cannot drift into inconsistent wording.
+
   audio/
+    microphone.ts          The separate audio-only permission request. Asked when a
+                           voice loop is first recorded, not at startup.
+    voice-capture.ts       Capturing the microphone through an AudioWorklet: one pass
+                           of the loop, aligned to the grid. Never monitored.
+    voice-loop.ts          The capture's arithmetic, pure: the window's length, the
+                           frames to discard to land on the line, and the assembly.
     transport.ts           The shared clock: tempo, bar lines, and the loop's length,
                            measured in beats against the AudioContext's clock. Pure,
                            so the timing maths is testable without a browser.
