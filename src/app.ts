@@ -1385,9 +1385,10 @@ export class GestureSynthApp {
         this.synth.glideNotes(notes);
         break;
       case "harp":
-        // Pluck on entering a degree and let the note ring while the hand holds,
-        // so a sweep across the frame plays a run rather than one long slide.
-        if (reading.isNewDegree) this.synth.playNotes(notes);
+        // Pluck on entering a degree and let it *decay*, so a sweep across the
+        // frame plays a phrase rather than one long slide. `pluckNotes` is what
+        // makes that a harp instead of a run of held notes.
+        if (reading.isNewDegree) this.synth.pluckNotes(notes);
         break;
       default:
         this.synth.playNotes(notes);

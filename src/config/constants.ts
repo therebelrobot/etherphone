@@ -275,6 +275,21 @@ export const AUDIO = {
   vibratoRateHz: 5.2,
   vibratoCentsPerFinger: 9,
 
+  /**
+   * A plucked note's shape: near-instant attack, then an exponential fall.
+   *
+   * The attack is short enough to read as a pluck rather than a swell, and the
+   * decay is a little over a second — long enough for a sweep up the frame to
+   * overlap into a phrase, short enough that it is gone before the hand comes
+   * back down.
+   */
+  pluckAttackSeconds: 0.004,
+  pluckDecaySeconds: 1.2,
+  /** The floor an exponential ramp heads for, since it cannot reach zero. */
+  pluckFloor: 0.0001,
+  /** How long past the decay a plucked oscillator is stopped, in seconds. */
+  pluckStopPaddingSeconds: 0.02,
+
   /** Ramp from silence when a sampled note starts, in seconds. */
   samplerAttackSeconds: 0.008,
   /** Ramp to silence when a sampled note stops, in seconds. */

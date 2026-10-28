@@ -69,6 +69,49 @@ export class OscillatorBank implements Voice {
     return true;
   }
 
+  /**
+   * Strikes each note through its own decaying envelope.
+   *
+   * The plucked oscillators are deliberately **not** tracked in
+   * {@link oscillators}: they stop themselves, and a second pluck must be able
+   * to overlap the first, which is the whole difference between a harp and a
+   * series of staccato notes. Only the sustained bank is silenced, so switching
+   * to a pluck still stops a held chord from ringing underneath it.
+   */
+  pluck(freqs: number[]): boolean {
+    if (!this.ctx || !this.destination || freqs.length === 0) return false;
+
+    this.release();
+
+    const now = this.ctx.currentTime;
+    const end = now + AUDIO.pluckDecaySeconds;
+
+    for (const freq of freqs) {
+      const oscillator = this.ctx.createOscillator();
+      const envelope = this.ctx.createGain();
+
+      this.options.configure(oscillator);
+      oscillator.frequency.value = freq;
+
+      envelope.gain.setValueAtTime(0, now);
+      envelope.gain.linearRampToValueAtTime(1, now + AUDIO.pluckAttackSeconds);
+      envelope.gain.exponentialRampToValueAtTime(AUDIO.pluckFloor, end);
+
+      oscillator.connect(envelope).connect(this.destination);
+      this.vibratoDepth?.connect(oscillator.detune);
+
+      oscillator.start(now);
+      // A hair past the decay, so the ramp finishes before the node is retired.
+      oscillator.stop(end + AUDIO.pluckStopPaddingSeconds);
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        envelope.disconnect();
+      };
+    }
+
+    return true;
+  }
+
   release(): void {
     this.silence();
     this.currentKey = null;

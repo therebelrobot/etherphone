@@ -194,6 +194,25 @@ export class SynthEngine {
   }
 
   /**
+   * Strikes notes that decay on their own, for the harp style.
+   *
+   * A voice without `pluck` sustains instead, so the style still plays on a
+   * sampler — it just sounds like a held note rather than a struck string.
+   */
+  pluckNotes(freqs: number[]): void {
+    if (!this.ctx || !this.voice || freqs.length === 0) return;
+
+    if (this.voice.pluck) {
+      this.voice.pluck(freqs);
+    } else {
+      this.voice.play(freqs);
+    }
+
+    // Nothing is sustained, so there is no note to remember as current.
+    this.currentKey = null;
+  }
+
+  /**
    * Sets how wide the sounding note's vibrato is.
    *
    * A voice is free not to have one — the same bargain `retune` makes — so an

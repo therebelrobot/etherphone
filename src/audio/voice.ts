@@ -68,6 +68,17 @@ export interface Voice {
    * instrument plays straight. `depthCents` of zero means "no vibrato".
    */
   setVibrato?(depthCents: number, rateHz: number): void;
+  /**
+   * Plays notes that decay on their own, instead of sustaining until replaced.
+   *
+   * This is what separates "a run of notes" from "a harp": a sustained note
+   * sounds only while the hand holds it, so a sweep is a legato line. A plucked
+   * one rings out and fades, so sweeping across the frame plays a phrase.
+   *
+   * Optional, like the rest: a sampled drum has nothing to decay, and a voice
+   * without it falls back to {@link play} and sustains.
+   */
+  pluck?(freqs: number[]): boolean;
   /** Silences every sounding note, leaving the graph connected. */
   release(): void;
   /** Releases and tears down the graph. The voice is not reused afterwards. */
