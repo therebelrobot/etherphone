@@ -564,3 +564,75 @@ describe("describeLooper", () => {
     );
   });
 });
+
+describe("scheduling ahead", () => {
+  /**
+   * One layer holding a single chord on beat 4, on the rig's grid: 120 BPM, so
+   * a beat is half a second and beat 4 falls at 2.0s.
+   */
+  function oneChordAtFour() {
+    const { transport, looper } = rig();
+
+    looper.replaceLayers([
+      {
+        label: "Chords 1",
+        mode: "chord",
+        muted: false,
+        take: {
+          bpm: 120,
+          loopBeats: 8,
+          events: [
+            {
+              kind: "chord",
+              beat: 4,
+              volume: 0.5,
+              tilt: 0,
+              numeral: "I",
+              isMajorMode: true,
+              qualityIndex: 1,
+              thumbDown: false,
+            },
+          ],
+        },
+      },
+    ]);
+    looper.play(0);
+
+    return { transport, looper };
+  }
+
+  it("hands an event over before it is due, with the time it should sound at", () => {
+    const { transport, looper } = oneChordAtFour();
+
+    // 1.95s is beat 3.9; a 50ms lookahead reaches beat 4.0 exactly.
+    const hits = looper.schedule(1.95, 0.05);
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0].when).toBeCloseTo(transport.ctxTimeForBeat(4), 6);
+    expect(hits[0].when).toBeCloseTo(2, 6);
+  });
+
+  it("does not return the same event twice once the window has passed it", () => {
+    const { looper } = oneChordAtFour();
+
+    expect(looper.schedule(1.95, 0.05)).toHaveLength(1);
+    expect(looper.schedule(2.0, 0.05)).toHaveLength(0);
+    expect(looper.schedule(2.05, 0.05)).toHaveLength(0);
+  });
+
+  it("still returns nothing when the event is further off than the window", () => {
+    const { looper } = oneChordAtFour();
+
+    // 1.0s is beat 2; beat 4 is a whole second away.
+    expect(looper.schedule(1.0, 0.05)).toHaveLength(0);
+  });
+
+  it("behaves exactly like tick when the window is zero", () => {
+    const scheduled = oneChordAtFour();
+    const ticked = oneChordAtFour();
+
+    expect(scheduled.looper.schedule(2.0, 0).map((hit) => hit.event)).toEqual(
+      ticked.looper.tick(2.0).map((hit) => hit.event),
+    );
+  });
+});

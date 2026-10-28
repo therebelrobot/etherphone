@@ -1220,8 +1220,11 @@ export class GestureSynthApp {
    * same kind. That is what makes a take sound like the take.
    */
   private updateLoop(ctxTime: number): void {
-    for (const hit of this.looper.tick(ctxTime)) {
-      this.playLoopEvent(hit.trackId, resolveTakeEvent(hit.event, this.tonicFrequency));
+    // Scheduled ahead rather than "now": the audio thread is told the moment a
+    // note should start, so an onset lands on the beat instead of on whichever
+    // frame noticed it. This is what #10's drums need to be believable.
+    for (const hit of this.looper.schedule(ctxTime, TRANSPORT.schedulingLookaheadSeconds)) {
+      this.playLoopEvent(hit.trackId, resolveTakeEvent(hit.event, this.tonicFrequency), hit.when);
     }
 
     const { state } = this.looper;
@@ -1277,7 +1280,7 @@ export class GestureSynthApp {
     });
   }
 
-  private playLoopEvent(trackId: TrackId, resolved: ResolvedEvent): void {
+  private playLoopEvent(trackId: TrackId, resolved: ResolvedEvent, when?: number): void {
     const layer = this.layerFor(trackId);
     const gain = this.looper.tracks.find((track) => track.id === trackId)?.gain ?? 1;
 
@@ -1286,7 +1289,12 @@ export class GestureSynthApp {
       return;
     }
 
-    layer.playNotes(resolved.notes);
+    if (when === undefined) {
+      layer.playNotes(resolved.notes);
+    } else {
+      layer.playNotesAt(resolved.notes, when);
+    }
+
     layer.updateFilterSweep(resolved.tilt);
     layer.setVolume(resolved.volume * gain);
   }

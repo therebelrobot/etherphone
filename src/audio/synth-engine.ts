@@ -194,6 +194,27 @@ export class SynthEngine {
   }
 
   /**
+   * Replaces the sounding notes at a precise context time.
+   *
+   * Used by the looper, whose events are known before they are due. A voice
+   * without `playAt` falls back to `playNotes`, which is a frame early rather
+   * than wrong.
+   */
+  playNotesAt(freqs: number[], when: number): void {
+    if (!this.ctx || !this.voice || freqs.length === 0) return;
+
+    const key = frequenciesKey(freqs);
+    if (key === this.currentKey) return;
+
+    if (this.voice.playAt) {
+      if (this.voice.playAt(freqs, when)) this.currentKey = key;
+      return;
+    }
+
+    this.playNotes(freqs);
+  }
+
+  /**
    * Strikes notes that decay on their own, for the harp style.
    *
    * A voice without `pluck` sustains instead, so the style still plays on a

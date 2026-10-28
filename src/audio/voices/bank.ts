@@ -70,6 +70,46 @@ export class OscillatorBank implements Voice {
   }
 
   /**
+   * Replaces the sounding notes at exactly `when`.
+   *
+   * The old oscillators are *stopped* at `when` rather than silenced now, and
+   * the new ones start there, so the handover happens on a sample rather than
+   * wherever the frame landed. A time in the past means "as soon as possible",
+   * which is what a late frame gets.
+   */
+  playAt(freqs: number[], when: number): boolean {
+    if (!this.ctx || !this.destination || freqs.length === 0) return false;
+
+    const key = frequenciesKey(freqs);
+    if (key === this.currentKey) return true;
+
+    const at = Math.max(when, this.ctx.currentTime);
+    const previous = this.oscillators;
+
+    this.oscillators = freqs.map((freq) => {
+      const oscillator = this.ctx!.createOscillator();
+      this.options.configure(oscillator);
+      oscillator.frequency.value = freq;
+      oscillator.connect(this.destination!);
+      this.vibratoDepth?.connect(oscillator.detune);
+      oscillator.start(at);
+      return oscillator;
+    });
+
+    for (const oscillator of previous) {
+      try {
+        oscillator.stop(at);
+        oscillator.onended = () => oscillator.disconnect();
+      } catch {
+        /* already stopped */
+      }
+    }
+
+    this.currentKey = key;
+    return true;
+  }
+
+  /**
    * Strikes each note through its own decaying envelope.
    *
    * The plucked oscillators are deliberately **not** tracked in

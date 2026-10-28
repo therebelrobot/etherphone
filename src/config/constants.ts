@@ -165,6 +165,14 @@ export const TRANSPORT = {
    * onset does not smear the loop.
    */
   quantiseBeats: 0.25,
+  /**
+   * How far ahead of the playhead the scheduler hands events to the audio thread.
+   *
+   * Fifty milliseconds is three frames at 60Hz — enough that a dropped frame
+   * cannot make the scheduler late, and short enough that stopping the loop does
+   * not leave a quarter second of queued notes to play into the silence.
+   */
+  schedulingLookaheadSeconds: 0.05,
 } as const;
 
 /** Where the loop's tempo and length are remembered between visits. */

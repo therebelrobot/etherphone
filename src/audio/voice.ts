@@ -79,6 +79,15 @@ export interface Voice {
    * without it falls back to {@link play} and sustains.
    */
   pluck?(freqs: number[]): boolean;
+  /**
+   * Replaces the sounding notes at a precise moment, not immediately.
+   *
+   * This is what makes an onset sample-accurate. The render loop runs at the
+   * frame rate, so "play now" can be most of a frame late; handing the audio
+   * thread a context time lets it start exactly on the beat. Optional, and a
+   * voice without it falls back to {@link play} — early by a frame, but honest.
+   */
+  playAt?(freqs: number[], when: number): boolean;
   /** Silences every sounding note, leaving the graph connected. */
   release(): void;
   /** Releases and tears down the graph. The voice is not reused afterwards. */

@@ -57,6 +57,17 @@ export interface TrackHit {
 }
 
 /**
+ * A hit with the context time it should sound at.
+ *
+ * Separate from {@link TrackHit} on purpose: the time is what the audio thread
+ * needs and the drawing code does not, and a caller that ignores it should be
+ * able to say so in the type.
+ */
+export interface ScheduledHit extends TrackHit {
+  readonly when: number;
+}
+
+/**
  * A layer handed in from outside — an imported take, rather than a recording.
  *
  * It has no id because ids are the looper's to assign: an imported layer must
@@ -401,6 +412,22 @@ export class Looper {
 
   /** Advances the loop and returns the events due since the last call. */
   tick(ctxTime: number): TrackHit[] {
+    return this.schedule(ctxTime, 0).map(({ trackId, event }) => ({ trackId, event }));
+  }
+
+  /**
+   * Advances the loop and returns the events due in the next `lookahead` seconds.
+   *
+   * Each hit carries the context time it should *sound* at, which is the whole
+   * point: the render loop wakes roughly sixteen milliseconds at a time, so an
+   * event handed to the audio thread "now" can be most of a frame late. A
+   * sustained chord forgives that; a drum hit does not, and #10 is built on this.
+   *
+   * The window advances the playhead past everything it hands back, so the next
+   * call cannot return the same event twice — the scheduler is still one
+   * window-at-a-time, not a queue that has to be drained.
+   */
+  schedule(ctxTime: number, lookahead: number): ScheduledHit[] {
     if (this.armed !== null && this.transport.elapsedBeats(ctxTime) >= this.armed.targetBeat) {
       this.beginRecording();
     }
@@ -409,7 +436,7 @@ export class Looper {
       this.closeRecording();
     }
 
-    return this.dueHits(ctxTime);
+    return this.dueHits(ctxTime, lookahead);
   }
 
   /** Beats since the recording began. */
@@ -544,10 +571,13 @@ export class Looper {
    * keeps a loop seamless across the seam and a new layer in phase with the
    * ones already playing.
    */
-  private dueHits(ctxTime: number): TrackHit[] {
+  private dueHits(ctxTime: number, lookahead: number): ScheduledHit[] {
     const now = this.transport.elapsedBeats(ctxTime);
+    // The horizon is where the window ends, in beats. With no lookahead that is
+    // the playhead itself, which is the frame-driven behaviour this replaces.
+    const horizon = now + (lookahead > 0 ? lookahead / this.transport.secondsPerBeat : 0);
     const loopBeats = this.transport.loopBeats;
-    const due: { hit: TrackHit; occurrence: number }[] = [];
+    const due: { hit: ScheduledHit; occurrence: number }[] = [];
 
     for (const track of this.tracksValue.values()) {
       if (!track.take || track.muted) continue;
@@ -558,11 +588,20 @@ export class Looper {
 
         while (occurrence <= this.lastPlayedBeat) occurrence += loopBeats;
 
-        if (occurrence <= now) due.push({ hit: { trackId: track.id, event }, occurrence });
+        if (occurrence <= horizon) {
+          due.push({
+            hit: {
+              trackId: track.id,
+              event,
+              when: this.transport.ctxTimeForBeat(occurrence),
+            },
+            occurrence,
+          });
+        }
       }
     }
 
-    this.lastPlayedBeat = now;
+    this.lastPlayedBeat = Math.max(horizon, this.lastPlayedBeat);
 
     // A long frame can span several events — and, at the seam, the end of one
     // pass and the start of the next — so they are ordered by when they fall.
