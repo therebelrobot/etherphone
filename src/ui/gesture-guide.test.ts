@@ -126,3 +126,17 @@ describe("the modifier row", () => {
     expect(row?.silent).toBe(false);
   });
 });
+
+describe("the re-strike row", () => {
+  it("is listed when re-articulation is on, because a gesture nobody sees is one nobody finds", () => {
+    const rows = controlGuideRows({ looping: true, singleHanded: false, rearticulate: true });
+
+    expect(rows.map((row) => row.does)).toContain("Re-strike");
+  });
+
+  it("is absent when it is switched off", () => {
+    const rows = controlGuideRows({ looping: true, singleHanded: false });
+
+    expect(rows.map((row) => row.does)).not.toContain("Re-strike");
+  });
+});

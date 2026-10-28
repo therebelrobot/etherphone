@@ -5,6 +5,7 @@ import {
   classifyChord,
   getChordQuality,
   getHandCenter,
+  getHandDepth,
   getHandHorizontalTilt,
   getRightHandQualityIndex,
   getVolumeFromHeight,
@@ -329,5 +330,25 @@ describe("getHandCenter", () => {
     setPoint(hand, MIDDLE_MCP, 0.6, 0.2);
 
     expect(getHandCenter(hand)).toEqual({ x: 0.5, y: 0.4 });
+  });
+});
+
+describe("getHandDepth", () => {
+  /** Landmarks at a given depth, which is all this reads. */
+  const at = (z: number) => Array.from({ length: 21 }, () => ({ x: 0, y: 0, z, visibility: 1 }));
+
+  it("averages the landmarks, so one noisy point cannot read as a push", () => {
+    const mixed = at(-0.1);
+    mixed[0] = { x: 0, y: 0, z: 0.6, visibility: 1 };
+
+    expect(getHandDepth(mixed)).toBeCloseTo((-0.1 * 20 + 0.6) / 21, 6);
+  });
+
+  it("is smaller when the hand is nearer the camera, which is the sign the gesture relies on", () => {
+    expect(getHandDepth(at(-0.2))).toBeLessThan(getHandDepth(at(0)));
+  });
+
+  it("does not divide by zero on an empty hand", () => {
+    expect(getHandDepth([])).toBe(0);
   });
 });

@@ -234,6 +234,22 @@ export class SynthEngine {
   }
 
   /**
+   * Re-strikes the sounding notes from the start.
+   *
+   * {@link playNotes} is deliberately a no-op when the frequencies have not
+   * changed — that is what makes calling it every frame cheap — so a *repeat* of
+   * the same note needs this instead. It is what re-articulation is: the note is
+   * already current, and the player has asked to hear it struck again.
+   */
+  retrigger(freqs: number[]): void {
+    if (!this.ctx || !this.voice || freqs.length === 0) return;
+
+    this.voice.release();
+    this.currentKey = null;
+    this.playNotes(freqs);
+  }
+
+  /**
    * Sets how wide the sounding note's vibrato is.
    *
    * A voice is free not to have one — the same bargain `retune` makes — so an

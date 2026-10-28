@@ -19,6 +19,7 @@ import { DEFAULT_VOICE_ID } from "./audio/voices";
 import {
   ARM_UNIT_CHOICES,
   ARM_UNIT_STORAGE_KEY,
+  ARTICULATION_STORAGE_KEY,
   AUDIO,
   BARS_STORAGE_KEY,
   CUSTOM_MAP_STORAGE_KEY,
@@ -96,11 +97,13 @@ import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { downloadBlob } from "./ui/download";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
+import { ArticulationGesture } from "./vision/articulation-gesture";
 import { startCamera, describeCameraError, hasSecureContext } from "./vision/camera";
 import {
   classifyChord,
   readHandShape,
   getHandCenter,
+  getHandDepth,
   getHandHeight,
   getHandHorizontalTilt,
   getRightHandQualityIndex,
@@ -138,6 +141,9 @@ const HARMONY_HAND_ID = "harmony-hand";
 
 /** The id of the entry that steps the glide's snap strength. */
 const SNAP_STRENGTH_ID = "snap-strength";
+
+/** The id of the entry that turns re-articulation on or off. */
+const REARTICULATE_ID = "rearticulate";
 
 /**
  * The id of the "edit my map" entry in the vocabulary menu.
@@ -372,6 +378,7 @@ export class GestureSynthApp {
     this.looping = this.readStoredLooping();
     this.setArmUnit(this.readStoredArmUnit());
     this.snapStrength = this.readStoredSnapStrength();
+    this.rearticulate = this.readStoredRearticulate();
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
     this.renderTransportChoices();
@@ -479,6 +486,25 @@ export class GestureSynthApp {
     this.layers.set(id, layer);
 
     return layer;
+  }
+
+  /**
+   * Strikes a mono note the way the current style says.
+   *
+   * `force` is re-articulation, and it matters for the sustained styles: striking
+   * a note that is already current is deliberately a no-op, so a repeat needs to
+   * say so rather than rely on the note having changed.
+   */
+  private strikeMonoNote(notes: number[], force = false): void {
+    const decay = pluckDecayFor(this.monoStyle);
+
+    if (decay !== null) {
+      this.synth.pluckNotes(notes, decay);
+      return;
+    }
+
+    if (force) this.synth.retrigger(notes);
+    else this.synth.playNotes(notes);
   }
 
   /** Says something in the transport readout for a few seconds. */
@@ -954,6 +980,23 @@ export class GestureSynthApp {
     remember(SNAP_STRENGTH_STORAGE_KEY, String(next));
   }
 
+  /** Reads the remembered re-articulation setting. On unless it was turned off. */
+  private readStoredRearticulate(): boolean {
+    try {
+      return window.localStorage.getItem(ARTICULATION_STORAGE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  }
+
+  /** Turns re-articulation on or off, and remembers it. */
+  private setRearticulate(enabled: boolean): void {
+    this.rearticulate = enabled;
+    remember(ARTICULATION_STORAGE_KEY, enabled ? "on" : "off");
+    this.articulation.reset();
+    this.refreshHelp();
+  }
+
   /** Reads the remembered looping setting. On unless it was turned off. */
   private readStoredLooping(): boolean {
     try {
@@ -1162,6 +1205,7 @@ export class GestureSynthApp {
     this.guide.render(this.mode, this.keyName, this.gestureMap, {
       looping: this.looping,
       singleHanded: this.singleHanded,
+      rearticulate: this.rearticulate,
     });
     this.help.render(this.mode, this.keyName, this.gestureMap, this.looping);
   }
@@ -1364,7 +1408,7 @@ export class GestureSynthApp {
     );
 
     if (this.mode === "mono") {
-      this.updateMonoFrame(Left, Right, volume, tilt, ctxTime);
+      this.updateMonoFrame(Left, Right, volume, tilt, ctxTime, now);
       return;
     }
 
@@ -1555,6 +1599,7 @@ export class GestureSynthApp {
     volume: number,
     tilt: number,
     ctxTime: number,
+    now: number,
   ): void {
     // Pitch comes from the chord hand — the same hand that picks chords picks
     // the note — and the thumb from the expression hand, where there is no
@@ -1598,18 +1643,24 @@ export class GestureSynthApp {
         this.synth.glideNotes(notes);
         break;
       case "harp":
-      case "staccato": {
-        // Pluck on entering a degree and let it *decay*. `pluckNotes` is what
-        // makes this a harp rather than a run of held notes, and the decay is
-        // the whole difference between the two plucked styles: long rings into a
-        // phrase, short is a run of separate notes.
-        const decay = pluckDecayFor(this.monoStyle);
-        if (reading.isNewDegree && decay !== null) this.synth.pluckNotes(notes, decay);
+      case "staccato":
+        // Pluck on entering a degree and let it *decay*. The decay is the whole
+        // difference between the two plucked styles: long rings into a phrase,
+        // short is a run of separate notes.
+        if (reading.isNewDegree) this.strikeMonoNote(notes);
         break;
-      }
       default:
         this.synth.playNotes(notes);
     }
+
+    // Re-articulation: the same note struck again, without moving the hand. This
+    // is the one thing no style can do on its own, because a repeat is not a
+    // *change* of degree and every style is driven by changes.
+    const { fired } = this.rearticulate
+      ? this.articulation.update(pitch ? getHandDepth(pitch) : null, now)
+      : this.articulation.update(null, now);
+
+    if (fired) this.strikeMonoNote(notes, true);
 
     this.synth.setVolume(volume);
 
@@ -1987,11 +2038,21 @@ export class GestureSynthApp {
         keepsMenuOpen: true,
       };
 
+      // Its own switch because the thresholds were chosen from MediaPipe's `z`
+      // semantics rather than from a hand: if they misfire on your camera, this
+      // is one dwell away from silence rather than a rebuild.
+      const rearticulate: MenuOption = {
+        id: REARTICULATE_ID,
+        label: `Re-strike: ${this.rearticulate ? "on" : "off"}`,
+        keepsMenuOpen: true,
+      };
+
       const items: MenuOption[] = [
         { id: "chord", label: "Chords", keepsMenuOpen: true },
         { id: "mono", label: "Mono", keepsMenuOpen: true },
         harmonyHand,
         snapStrength,
+        rearticulate,
         oneHanded,
         looping,
       ];
@@ -2116,6 +2177,11 @@ export class GestureSynthApp {
 
       if (choice.id === SNAP_STRENGTH_ID) {
         this.nextSnapStrength();
+        return;
+      }
+
+      if (choice.id === REARTICULATE_ID) {
+        this.setRearticulate(!this.rearticulate);
         return;
       }
 
@@ -2268,6 +2334,12 @@ export class GestureSynthApp {
 
   /** How hard a glide is pulled toward the nearest note, from the snap setting. */
   private snapStrength: number = MONO_SNAP_STRENGTH_DEFAULT;
+
+  /** Whether pushing the pitch hand re-strikes the note. */
+  private rearticulate = true;
+
+  /** The depth reader: push the pitch hand forward to hear the note struck again. */
+  private readonly articulation = new ArticulationGesture();
 
   /** The player's own map, once it exists. `null` until Custom is first chosen. */
   private customSlots: CustomMapSlots | null = null;

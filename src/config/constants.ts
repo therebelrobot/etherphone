@@ -70,6 +70,31 @@ export const MONO_SNAP_CHOICES = [0, 0.5, 1] as const;
 /** Where the snap strength is remembered between visits. */
 export const SNAP_STRENGTH_STORAGE_KEY = "etherphone.snap-strength";
 
+/**
+ * Re-articulation by pushing the pitch hand toward the camera.
+ *
+ * `baselineAlpha` is how slowly the resting depth is tracked: low enough that a
+ * push does not move the baseline it is measured against, high enough that
+ * drifting across the frame does not eventually read as a push.
+ *
+ * The two depth thresholds are **relative to that baseline**, so they describe a
+ * push rather than a position — a hand resting anywhere can still articulate.
+ * These are the numbers that need a camera to tune; the gesture can be switched
+ * off in Settings if they misfire.
+ */
+export const ARTICULATION = {
+  baselineAlpha: 0.05,
+  /** Forward travel from the baseline that counts as a push. */
+  pushDepth: 0.09,
+  /** How far back the hand must come before another push counts. */
+  releaseDepth: 0.03,
+  /** Shortest gap between two articulations (ms), so a held push fires once. */
+  minIntervalMs: 120,
+} as const;
+
+/** Where the re-articulation setting is remembered. Off unless it was turned on. */
+export const ARTICULATION_STORAGE_KEY = "etherphone.articulation";
+
 /** Radius of the hand-skeleton dots drawn onto the overlay, in canvas pixels. */
 export const LANDMARK_DOT_RADIUS = 4;
 

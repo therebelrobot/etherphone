@@ -80,11 +80,17 @@ export function monoGuideRows(keyName: KeyName): string[] {
 export function controlGuideRows(options: {
   readonly looping: boolean;
   readonly singleHanded: boolean;
+  /** Whether pushing the pitch hand re-strikes the note, which is mono only. */
+  readonly rearticulate?: boolean;
 }): ControlGuideRow[] {
   const rows: ControlGuideRow[] = [
     { gesture: options.singleHanded ? "✊ hold" : "✊✊ hold", does: "Menu" },
     { gesture: "☝ point, hold", does: "Choose" },
   ];
+
+  // A gesture with no visible state is a gesture nobody finds, so it is listed
+  // where the other control gestures are.
+  if (options.rearticulate) rows.push({ gesture: "✋ push", does: "Re-strike" });
 
   if (!options.looping || options.singleHanded) return rows;
 
@@ -118,12 +124,16 @@ export class GestureGuide {
     mode: InstrumentMode,
     keyName: KeyName,
     map: GestureMap,
-    options: { looping: boolean; singleHanded: boolean },
+    options: { looping: boolean; singleHanded: boolean; rearticulate?: boolean },
   ): void {
     this.mode = mode;
     this.keyName = keyName;
     this.map = map;
-    this.control = controlGuideRows(options);
+    // Re-articulation is a pitch-hand gesture, so it is only listed in mono.
+    this.control = controlGuideRows({
+      ...options,
+      rearticulate: options.rearticulate === true && mode === "mono",
+    });
     this.paint();
   }
 

@@ -103,8 +103,10 @@ will load the app but cannot reach the camera.
 - Four mono styles — quantised, glide, harp (plucked, ringing), and staccato (plucked, cut short)
 - **Snap assistance** on a glide: a magnetic pull toward the nearest note, adjustable between off
   and a firm detent. Continuous at every setting — it is not quantisation
-- Mono expression on the right hand: height is volume, tilt is filter, thumb drops an
+- Mono expression on the expression hand: height is volume, tilt is filter, thumb drops an
   octave for a bassline, and the finger count widens the vibrato
+- **Re-articulation**: push the pitch hand toward the camera to strike a held note again —
+  depth is the one input nothing else uses, so it cannot fight the note being played
 - A **gesture menu**: close both hands to fan one out around your hand, push out to point,
   dwell to choose. It reaches the key, instrument, tempo, loop length, transport, layers,
   every setting, and the map editor

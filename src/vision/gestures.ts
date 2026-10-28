@@ -192,6 +192,26 @@ export function isHandClosed(landmarks: Hand): boolean {
  * Midway between the wrist and the middle knuckle, which is steadier than either
  * end of the hand on its own.
  */
+/**
+ * How close the hand is to the camera, as the mean of the landmarks' depth.
+ *
+ * MediaPipe reports `z` roughly in the same units as `x`, with the wrist as the
+ * origin and **negative toward the camera** — so a hand pushed forward has a
+ * *smaller* value here, which is what the articulation gesture reads.
+ *
+ * Averaged over every landmark rather than read from one: a single point's depth
+ * is noisy frame to frame, and the mean is stable enough that a push stands out
+ * from resting jitter.
+ */
+export function getHandDepth(landmarks: Hand): number {
+  if (landmarks.length === 0) return 0;
+
+  let total = 0;
+  for (const landmark of landmarks) total += landmark.z;
+
+  return total / landmarks.length;
+}
+
 export function getHandCenter(landmarks: Hand): CanvasPoint {
   const wrist = landmarks[WRIST];
   const middleMcp = landmarks[MIDDLE_MCP];
