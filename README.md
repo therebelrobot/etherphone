@@ -634,6 +634,28 @@ Any other static host works too — the build output in `dist/` is plain HTML, C
 
 CI (`.github/workflows/ci.yml`) runs formatting, linting, typechecking, tests, and a build on every push to `main` and every pull request.
 
+### The live site, and the one setting that bites
+
+The Pages site answers on a custom domain, `github.aster.hn/etherphone/`. That
+domain's DNS is **proxied through Cloudflare** (it resolves to Cloudflare's edge
+addresses, not GitHub's), which has one consequence worth knowing:
+
+- HTTPS is terminated by **Cloudflare's** certificate, not GitHub's. GitHub
+  cannot complete its ACME challenge behind the proxy, so it never issues its
+  own: `PUT /repos/{owner}/{repo}/pages` with `https_enforced: true` fails with
+  `404 The certificate does not exist yet`, and the Pages API keeps reporting
+  `https_enforced: false`.
+- Because of that, `http://github.aster.hn/etherphone/` **serves 200 with no
+  redirect to HTTPS**. Over plain HTTP the browser withholds the camera, and the
+  instrument cannot run. The app now says so on the start overlay rather than
+  failing quietly — but the fix belongs at the edge.
+
+Enable **Always Use HTTPS** in the Cloudflare dashboard under _SSL/TLS → Edge
+Certificates_ (or add a redirect rule). That is not reachable from the GitHub
+API, which is why it is written down here. The alternative, if GitHub's own
+certificate is preferred, is to set the DNS record to **DNS only** (grey cloud)
+so GitHub can issue it, then turn on _Enforce HTTPS_ under Settings → Pages.
+
 To cut a release (which tags and triggers the multi-arch image build):
 
 ```bash
