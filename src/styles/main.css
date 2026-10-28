@@ -239,6 +239,21 @@ body {
   text-decoration: line-through;
 }
 
+/* A layer is a name and a level: the one mix control that is not a toggle. */
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+#layerControls .layer-row input[type="range"] {
+  flex: 1;
+  min-width: 70px;
+  accent-color: #e8a13d;
+  cursor: pointer;
+}
+
 /*
  * Carrying a take away and bringing one back. Quieter than the transport and
  * the layers, because it is a between-performances action rather than something

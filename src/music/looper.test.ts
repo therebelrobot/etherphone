@@ -395,6 +395,66 @@ describe("importing a take", () => {
   });
 });
 
+describe("layer levels", () => {
+  it("starts every layer at full, so a first recording is not quiet for no reason", () => {
+    const { looper } = rig();
+    recordChords(looper);
+
+    expect(looper.tracks[0].gain).toBe(1);
+  });
+
+  it("clamps a level into the range the fader has", () => {
+    const { looper } = rig();
+    recordChords(looper);
+    const id = idOf(looper, "Chords 1");
+
+    looper.setGain(id, 2);
+    expect(looper.tracks[0].gain).toBe(1);
+
+    looper.setGain(id, -1);
+    expect(looper.tracks[0].gain).toBe(0);
+  });
+
+  it("steps by a tenth, for a hand that cannot drag a fader", () => {
+    const { looper } = rig();
+    recordChords(looper);
+    const id = idOf(looper, "Chords 1");
+
+    looper.nudgeGain(id, -1);
+    looper.nudgeGain(id, -1);
+
+    expect(looper.tracks[0].gain).toBeCloseTo(0.8, 5);
+  });
+
+  it("keeps a layer's level across a re-record, like its mute", () => {
+    const { looper } = rig();
+    recordChords(looper);
+    const id = idOf(looper, "Chords 1");
+    looper.setGain(id, 0.4);
+
+    looper.rewrite(20, id);
+
+    expect(looper.tracks[0].gain).toBe(0.4);
+  });
+
+  it("takes a level from an imported layer, defaulting to full", () => {
+    const { looper } = rig();
+    const take = {
+      bpm: 120,
+      loopBeats: 8,
+      events: [],
+    };
+
+    looper.replaceLayers([
+      { label: "Chords 1", mode: "chord", muted: false, gain: 0.3, take },
+      { label: "Chords 2", mode: "chord", muted: false, take },
+    ]);
+
+    expect(looper.tracks[0].gain).toBe(0.3);
+    expect(looper.tracks[1].gain).toBe(1);
+  });
+});
+
 describe("stopping mid-recording", () => {
   it("closes the recording and keeps what was played", () => {
     const { looper } = rig();

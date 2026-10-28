@@ -29,6 +29,14 @@ export interface TakeDocumentTrack {
   readonly label: string;
   readonly mode: InstrumentMode;
   readonly muted: boolean;
+  /**
+   * The layer's own level, 0..1.
+   *
+   * Written on export, optional on read: how loud a part sat is part of the
+   * performance even though it is not part of the take, and a file written
+   * before levels existed must still load. Absent means 1.
+   */
+  readonly gain?: number;
   readonly take: Take;
 }
 
@@ -208,8 +216,16 @@ function parseTrack(raw: unknown, index: number): TakeDocumentTrack {
     label: raw.label,
     mode,
     muted: raw.muted === true,
+    // Clamped rather than rejected: a level outside the range is a bug in
+    // whatever wrote the file, not a reason to refuse a performance.
+    gain: raw.gain === undefined ? 1 : clampLevel(requireNumber(raw, "gain")),
     take: { bpm, loopBeats, events },
   };
+}
+
+/** Holds a level inside the range the fader has. */
+function clampLevel(level: number): number {
+  return Math.min(1, Math.max(0, level));
 }
 
 function parseEvent(raw: unknown, label: string, at: number): TakeEvent {

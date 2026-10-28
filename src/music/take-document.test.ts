@@ -91,6 +91,12 @@ describe("parseTakeDocument", () => {
     expect(parsed.tracks[1].take.events).toEqual(TRACKS[1].take.events);
   });
 
+  it("gives a track with no level a default of full", () => {
+    const parsed = parseTakeDocument(written());
+
+    expect(parsed.tracks.every((track) => track.gain === 1)).toBe(true);
+  });
+
   it("defaults muted to false rather than trusting a missing flag", () => {
     const parsed = parseTakeDocument(
       written({
@@ -166,6 +172,35 @@ describe("parseTakeDocument", () => {
   it("names the field in the error, so the file can be fixed", () => {
     const text = written().replace('"degree": 5', '"degree": "five"');
     expect(() => parseTakeDocument(text)).toThrow(/"degree" is not a number/);
+  });
+});
+
+describe("layer levels in a take file", () => {
+  it("carries each layer's level, so the mix travels with the performance", () => {
+    const parsed = parseTakeDocument(
+      written({
+        tracks: [
+          { ...TRACKS[0], gain: 0.4 },
+          { ...TRACKS[1], gain: 0.9 },
+        ],
+      }),
+    );
+
+    expect(parsed.tracks[0].gain).toBe(0.4);
+    expect(parsed.tracks[1].gain).toBe(0.9);
+  });
+
+  it("reads a file with no levels at all as full, so older takes still load", () => {
+    const text = written().replace(/\n\s*"gain": [0-9.]+,/g, "");
+    const parsed = parseTakeDocument(text);
+
+    expect(parsed.tracks.every((track) => track.gain === 1)).toBe(true);
+  });
+
+  it("clamps a level outside the range rather than refusing the performance", () => {
+    const parsed = parseTakeDocument(written({ tracks: [{ ...TRACKS[0], gain: 3 }] }));
+
+    expect(parsed.tracks[0].gain).toBe(1);
   });
 });
 

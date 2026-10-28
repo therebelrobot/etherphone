@@ -28,7 +28,7 @@ import {
 } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
-import { describeLooper, Looper } from "./music/looper";
+import { describeLooper, GAIN_STEP, Looper } from "./music/looper";
 import type { LoopLayerSeed, LoopTrack, TrackId } from "./music/looper";
 import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
@@ -112,6 +112,8 @@ const EXPORT_TAKE_ID = "export-take";
  * done to whichever layer was handed over.
  */
 const LAYER_ACTION_MUTE = "mute";
+const LAYER_ACTION_LOUDER = "louder";
+const LAYER_ACTION_QUIETER = "quieter";
 const LAYER_ACTION_REWRITE = "rewrite";
 const LAYER_ACTION_CLEAR = "clear";
 const LAYERS_BACK_ID = "layers-back";
@@ -466,6 +468,7 @@ export class GestureSynthApp {
               label: track.label,
               mode: track.mode,
               muted: track.muted,
+              gain: track.gain,
               take: track.take,
             },
           ],
@@ -526,6 +529,7 @@ export class GestureSynthApp {
       label: track.label,
       mode: track.mode,
       muted: track.muted,
+      gain: track.gain ?? 1,
       take: track.take,
     }));
 
@@ -709,6 +713,30 @@ export class GestureSynthApp {
     }
 
     this.replayLayer(track);
+  }
+
+  /**
+   * Sets one layer's level, and re-primes it so the change is heard *now*.
+   *
+   * Without the re-prime a fader would only take effect on the layer's next
+   * note, which on a two-bar chord is several seconds of a control that appears
+   * not to work.
+   */
+  private setLayerGain(id: TrackId, gain: number): void {
+    this.looper.setGain(id, gain);
+    this.replayIfSounding(id);
+  }
+
+  /** Steps one layer's level, for the menu, which cannot drag a fader. */
+  private nudgeLayerGain(id: TrackId, steps: number): void {
+    this.looper.nudgeGain(id, steps);
+    this.replayIfSounding(id);
+  }
+
+  /** Re-primes a layer unless it is dropped out. */
+  private replayIfSounding(id: TrackId): void {
+    const track = this.looper.tracks.find((candidate) => candidate.id === id);
+    if (track && !track.muted) this.replayLayer(track);
   }
 
   /** Re-primes a layer with whatever it should be sounding right now. */
@@ -1104,6 +1132,7 @@ export class GestureSynthApp {
 
   private playLoopEvent(trackId: TrackId, resolved: ResolvedEvent): void {
     const layer = this.layerFor(trackId);
+    const gain = this.looper.tracks.find((track) => track.id === trackId)?.gain ?? 1;
 
     if (resolved.notes.length === 0) {
       layer.setVolume(0);
@@ -1112,7 +1141,7 @@ export class GestureSynthApp {
 
     layer.playNotes(resolved.notes);
     layer.updateFilterSweep(resolved.tilt);
-    layer.setVolume(resolved.volume);
+    layer.setVolume(resolved.volume * gain);
   }
 
   /**
@@ -1123,20 +1152,39 @@ export class GestureSynthApp {
    */
   private renderLayerControls(): void {
     const tracks = this.looper.tracks;
-    const signature = tracks.map((track) => `${track.id}:${track.muted}`).join(",");
+    const signature = tracks
+      .map((track) => `${track.id}:${track.muted}:${track.gain.toFixed(2)}`)
+      .join(",");
     if (signature === this.layerSignature) return;
 
     this.layerSignature = signature;
 
     this.els.layerControls.replaceChildren(
       ...tracks.map((track) => {
+        const row = document.createElement("div");
+        row.className = "layer-row";
+
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = track.label;
         button.classList.toggle("muted", track.muted);
         button.title = track.muted ? `Bring ${track.label} back in` : `Drop ${track.label} out`;
         button.addEventListener("click", () => this.toggleLayer(track.id));
-        return button;
+
+        // A fader per layer, which is the one mix control that cannot be a
+        // toggle: "how much" is not the same question as "is it in".
+        const fader = document.createElement("input");
+        fader.type = "range";
+        fader.min = "0";
+        fader.max = "1";
+        fader.step = String(GAIN_STEP);
+        fader.value = String(track.gain);
+        fader.title = `${track.label} level: ${Math.round(track.gain * 100)}%`;
+        fader.setAttribute("aria-label", `${track.label} level`);
+        fader.addEventListener("input", () => this.setLayerGain(track.id, Number(fader.value)));
+
+        row.append(button, fader);
+        return row;
       }),
     );
   }
@@ -1445,6 +1493,19 @@ export class GestureSynthApp {
               label: focused.muted ? "Unmute" : "Mute",
               keepsMenuOpen: true,
             },
+            // Level is stepped rather than dragged: the cursor is a hand, and a
+            // hand that is coarse enough to pick a direction cannot land on a
+            // fader. Both entries stay open so the level can be nudged twice.
+            {
+              id: `${focused.id}:${LAYER_ACTION_LOUDER}`,
+              label: `Louder (${Math.round(focused.gain * 100)}%)`,
+              keepsMenuOpen: true,
+            },
+            {
+              id: `${focused.id}:${LAYER_ACTION_QUIETER}`,
+              label: "Quieter",
+              keepsMenuOpen: true,
+            },
             { id: `${focused.id}:${LAYER_ACTION_REWRITE}`, label: "Rewrite" },
             { id: `${focused.id}:${LAYER_ACTION_CLEAR}`, label: "Clear" },
             { id: LAYERS_BACK_ID, label: "Back", keepsMenuOpen: true },
@@ -1581,6 +1642,12 @@ export class GestureSynthApp {
       switch (action.action) {
         case LAYER_ACTION_MUTE:
           this.toggleLayer(action.trackId);
+          return;
+        case LAYER_ACTION_LOUDER:
+          this.nudgeLayerGain(action.trackId, 1);
+          return;
+        case LAYER_ACTION_QUIETER:
+          this.nudgeLayerGain(action.trackId, -1);
           return;
         case LAYER_ACTION_REWRITE:
           this.layerFocus = null;

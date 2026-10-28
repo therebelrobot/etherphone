@@ -39,6 +39,15 @@ export interface LoopTrack {
    * the difference between a looper you can play and one you can only listen to.
    */
   readonly muted: boolean;
+
+  /**
+   * The layer's own level, 0..1, multiplying whatever the take asks for.
+   *
+   * Mute is on/off and gain is "how much", and a performance needs both: a chord
+   * bed wants to sit under a lead permanently, while a layer you drop out and
+   * bring back wants a switch. One control cannot be both.
+   */
+  readonly gain: number;
 }
 
 /** One event, on the track it should be played through. */
@@ -57,7 +66,17 @@ export interface LoopLayerSeed {
   readonly label: string;
   readonly mode: InstrumentMode;
   readonly muted: boolean;
+  readonly gain?: number;
   readonly take: Take;
+}
+
+/** How far one step of the gain control moves. */
+export const GAIN_STEP = 0.1;
+
+/** Clamps a level into the range a layer's gain can take. */
+export function clampGain(gain: number): number {
+  if (!Number.isFinite(gain)) return 1;
+  return Math.min(1, Math.max(0, gain));
 }
 
 /** Whether a pending recording fills a new layer or replaces an existing one. */
@@ -185,6 +204,7 @@ export class Looper {
       mode,
       take: null,
       muted: false,
+      gain: 1,
     });
 
     this.armed = {
@@ -285,6 +305,7 @@ export class Looper {
         mode: seed.mode,
         take: seed.take,
         muted: seed.muted,
+        gain: clampGain(seed.gain ?? 1),
       });
     }
   }
@@ -305,6 +326,30 @@ export class Looper {
     if (!track || track.muted === muted) return;
 
     this.tracksValue.set(id, { ...track, muted });
+  }
+
+  /**
+   * Sets a layer's own level.
+   *
+   * Separate from mute because they answer different questions — "is this part
+   * in" and "how loud is it" — and a mix needs both at once.
+   */
+  setGain(id: TrackId, gain: number): void {
+    const track = this.tracksValue.get(id);
+    if (!track) return;
+
+    const clamped = clampGain(gain);
+    if (track.gain === clamped) return;
+
+    this.tracksValue.set(id, { ...track, gain: clamped });
+  }
+
+  /** Moves a layer's level by one step, for a gesture that cannot drag a slider. */
+  nudgeGain(id: TrackId, steps: number): void {
+    const track = this.tracksValue.get(id);
+    if (!track) return;
+
+    this.setGain(id, track.gain + steps * GAIN_STEP);
   }
 
   /** Flips a layer between sounding and silent. */
@@ -401,13 +446,15 @@ export class Looper {
     if (existing?.take) this.displaced = { trackId: existing.id, take: existing.take };
 
     // Re-recording a layer replaces it, so the old take stops sounding now
-    // rather than playing underneath the new one. Its mute survives.
+    // rather than playing underneath the new one. Its mute and its level
+    // survive: they are how the part sits in the mix, not part of the take.
     this.tracksValue.set(armed.trackId, {
       id: armed.trackId,
       label: armed.label,
       mode: armed.mode,
       take: null,
       muted: existing?.muted ?? false,
+      gain: existing?.gain ?? 1,
     });
 
     this.recordOriginBeat = armed.targetBeat;
