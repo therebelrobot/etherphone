@@ -73,9 +73,9 @@ function countMap(
 }
 
 /** The shape the original instrument calls the submediant: index + pinky. */
-const ROCK_SIGN = shapeFromFingers({ index: true, pinky: true });
+export const ROCK_SIGN = shapeFromFingers({ index: true, pinky: true });
 /** The leading-tone variant: the rock sign with the thumb out too. */
-const ROCK_SIGN_THUMB = shapeFromFingers({ thumb: true, index: true, pinky: true });
+export const ROCK_SIGN_THUMB = shapeFromFingers({ thumb: true, index: true, pinky: true });
 
 /**
  * Today's mapping, exactly: finger count reaches I–V and the rock signs reach

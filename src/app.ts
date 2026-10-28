@@ -20,6 +20,7 @@ import {
   ARM_UNIT_CHOICES,
   ARM_UNIT_STORAGE_KEY,
   BARS_STORAGE_KEY,
+  CUSTOM_MAP_STORAGE_KEY,
   GESTURE_MAP_STORAGE_KEY,
   LOOPING_STORAGE_KEY,
   MODE_STORAGE_KEY,
@@ -30,6 +31,17 @@ import {
   TRANSPORT,
 } from "./config/constants";
 import { getChordDisplayName, getChordTones } from "./music/harmony";
+import {
+  CUSTOM_MAP_ID,
+  CUSTOM_MAP_LABEL,
+  customMapFromSlots,
+  decodeCustomMap,
+  encodeCustomMap,
+  hashForCustomMap,
+  slotsFromHash,
+  slotsFromMap,
+} from "./music/custom-map";
+import type { CustomMapSlots } from "./music/custom-map";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
 import { describeLooper, GAIN_STEP, Looper } from "./music/looper";
 import type { LoopLayerSeed, LoopTrack, TrackId } from "./music/looper";
@@ -303,10 +315,19 @@ export class GestureSynthApp {
     this.renderGestureMaps();
     this.renderTransportChoices();
     this.applyLoopingVisibility();
-    this.gestureMap = getGestureMap(
-      restoreSelect(this.els.gestureMapSelect, GESTURE_MAP_STORAGE_KEY),
-    );
-    this.els.gestureMapSelect.value = this.gestureMap.id;
+    // A shared link outranks the remembered map, and both outrank Classic.
+    this.customSlots = this.readHashCustomMap() ?? this.readStoredCustomMap();
+
+    const storedMapId = restoreSelect(this.els.gestureMapSelect, GESTURE_MAP_STORAGE_KEY);
+    const startingId =
+      this.readHashCustomMap() !== null
+        ? CUSTOM_MAP_ID
+        : storedMapId === CUSTOM_MAP_ID && this.customSlots === null
+          ? DEFAULT_GESTURE_MAP_ID
+          : storedMapId;
+
+    this.gestureMap = this.resolveGestureMap(startingId);
+    this.els.gestureMapSelect.value = startingId;
     this.applyModeVisibility();
   }
 
@@ -846,10 +867,54 @@ export class GestureSynthApp {
 
   /** Switches the gesture vocabulary and keeps the readouts in step. */
   private setGestureMap(id: string): void {
-    this.gestureMap = getGestureMap(id);
-    this.els.gestureMapSelect.value = this.gestureMap.id;
-    remember(GESTURE_MAP_STORAGE_KEY, this.gestureMap.id);
+    // Choosing Custom for the first time seeds it from whatever is in play, so
+    // it starts as a copy of the map the player already likes rather than as
+    // seven empty shapes.
+    if (id === CUSTOM_MAP_ID && this.customSlots === null) {
+      this.customSlots = slotsFromMap(this.gestureMap);
+      this.saveCustomMap();
+    }
+
+    this.gestureMap = this.resolveGestureMap(id);
+    this.els.gestureMapSelect.value = id === CUSTOM_MAP_ID ? CUSTOM_MAP_ID : this.gestureMap.id;
+    remember(GESTURE_MAP_STORAGE_KEY, id);
     this.refreshHelp();
+  }
+
+  /**
+   * Reads a map out of the URL, which is how one is shared.
+   *
+   * A link is the whole distribution mechanism: there is no account, no server,
+   * and no file to send. If there is one in the fragment it wins over the stored
+   * map, because following a link is a deliberate act and loading the map you
+   * were sent is what the link is *for*.
+   */
+  private readHashCustomMap(): CustomMapSlots | null {
+    return slotsFromHash(window.location.hash);
+  }
+
+  /** Reads the remembered custom map, or `null` when there is not a usable one. */
+  private readStoredCustomMap(): CustomMapSlots | null {
+    try {
+      const stored = window.localStorage.getItem(CUSTOM_MAP_STORAGE_KEY);
+      return stored === null ? null : decodeCustomMap(stored);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Remembers the custom map, and keeps the shareable link up to date with it. */
+  private saveCustomMap(): void {
+    if (this.customSlots === null) return;
+
+    remember(CUSTOM_MAP_STORAGE_KEY, encodeCustomMap(this.customSlots));
+
+    // replaceState rather than assigning the hash: an edit is not a navigation,
+    // and a map edited ten times should not leave ten history entries.
+    const hash = hashForCustomMap(this.customSlots);
+    if (window.location.hash !== hash) {
+      window.history.replaceState(null, "", hash);
+    }
   }
 
   /** Switches between chords and a single note. */
@@ -925,17 +990,37 @@ export class GestureSynthApp {
   private renderGestureMaps(): void {
     const select = this.els.gestureMapSelect;
 
-    select.replaceChildren(
-      ...GESTURE_MAPS.map((map) => {
-        const option = document.createElement("option");
-        option.value = map.id;
-        option.textContent = map.label;
-        option.title = map.description;
-        return option;
-      }),
-    );
+    const presets = GESTURE_MAPS.map((map) => {
+      const option = document.createElement("option");
+      option.value = map.id;
+      option.textContent = map.label;
+      option.title = map.description;
+      return option;
+    });
 
+    // Custom is always offered, because choosing it is how you *make* one.
+    const custom = document.createElement("option");
+    custom.value = CUSTOM_MAP_ID;
+    custom.textContent = CUSTOM_MAP_LABEL;
+    custom.title = "Your own map: seven shapes, whatever they should play.";
+
+    select.replaceChildren(...presets, custom);
     select.value = DEFAULT_GESTURE_MAP_ID;
+  }
+
+  /**
+   * The map a picker id means.
+   *
+   * The presets are static data; the custom one is whatever the player built, and
+   * falls back to Classic while it is still empty — an id that resolves to an
+   * instrument which plays nothing is not a map.
+   */
+  private resolveGestureMap(id: string): GestureMap {
+    if (id === CUSTOM_MAP_ID && this.customSlots !== null) {
+      return customMapFromSlots(this.customSlots);
+    }
+
+    return getGestureMap(id);
   }
 
   /**
@@ -1767,6 +1852,9 @@ export class GestureSynthApp {
 
   /** How long a recording waits to begin: the next bar line, or the next beat. */
   private armUnit: ArmUnit = "bar";
+
+  /** The player's own map, once it exists. `null` until Custom is first chosen. */
+  private customSlots: CustomMapSlots | null = null;
 
   /** Which menu the left hand has chosen, and the right hand is choosing within. */
   private menuId: MenuTopic = "vocabulary";

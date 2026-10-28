@@ -171,6 +171,9 @@ export const TRANSPORT = {
 export const TEMPO_STORAGE_KEY = "etherphone.tempo";
 export const BARS_STORAGE_KEY = "etherphone.bars";
 
+/** Where a player's own gesture map is remembered, as its seven-character code. */
+export const CUSTOM_MAP_STORAGE_KEY = "etherphone.custom-map";
+
 /** Where the recording is allowed to begin, from {@link ARM_UNIT_CHOICES}. */
 export const ARM_UNIT_STORAGE_KEY = "etherphone.arm-unit";
 
