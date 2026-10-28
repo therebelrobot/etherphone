@@ -29,11 +29,16 @@ import {
 import { getChordDisplayName, getChordTones } from "./music/harmony";
 import { DEFAULT_GESTURE_MAP_ID, GESTURE_MAPS, getGestureMap } from "./music/gesture-map";
 import { describeLooper, Looper } from "./music/looper";
-import type { LoopTrack, TrackId } from "./music/looper";
+import type { LoopLayerSeed, LoopTrack, TrackId } from "./music/looper";
 import { MonoReader, monoNoteLabel, monoNumeral } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
 import { resolveTakeEvent } from "./music/take";
 import type { ResolvedEvent } from "./music/take";
+import {
+  parseTakeDocument,
+  serializeTakeDocument,
+  takeDocumentFilename,
+} from "./music/take-document";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
 import type {
   CanvasPoint,
@@ -55,6 +60,7 @@ import { menuTopicsFor, MenuController } from "./ui/menu-controller";
 import type { MenuClusterName, MenuTopic } from "./ui/menu-controller";
 import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/radial-menu";
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
+import { downloadBlob } from "./ui/download";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
 import { startCamera, describeCameraError, hasSecureContext } from "./vision/camera";
@@ -89,6 +95,15 @@ const ONE_HANDED_ID = "one-handed";
 
 /** The id of the looper's on/off switch, which is likewise not a value. */
 const LOOPING_ID = "looping";
+
+/**
+ * The id of the "save the take" entry in the transport menu.
+ *
+ * An action rather than a value, like the two above, but it belongs in the
+ * transport: a take is the transport's product, and saving it is the last thing
+ * a player does with a loop.
+ */
+const EXPORT_TAKE_ID = "export-take";
 
 /**
  * The Layers menu, once a layer is in hand.
@@ -181,6 +196,15 @@ export class GestureSynthApp {
 
   /** Most recent landmarks per hand, carried between animation frames. */
   private readonly hands: Record<Handedness, Hand | null> = { Left: null, Right: null };
+
+  /**
+   * A transient message for the transport readout.
+   *
+   * The readout is rewritten every frame from the looper's state, so a message
+   * has to be able to outrank it for a moment — otherwise an import failure is
+   * said and then overwritten before it can be read.
+   */
+  private transportNotice: { message: string; until: number } | null = null;
 
   private lastVideoTime = -1;
 
@@ -357,6 +381,11 @@ export class GestureSynthApp {
     return layer;
   }
 
+  /** Says something in the transport readout for a few seconds. */
+  private flashTransport(message: string): void {
+    this.transportNotice = { message, until: performance.now() + 4000 };
+  }
+
   /** The instrument's clock, or zero before the audio graph exists. */
   private audioTime(): number {
     return this.synth.context?.currentTime ?? 0;
@@ -409,6 +438,99 @@ export class GestureSynthApp {
     this.els.sampleFile.addEventListener("change", () => {
       void this.loadInstrument(this.els.sampleFile, "sampler");
     });
+
+    this.els.exportTakeButton.addEventListener("click", () => this.exportTake());
+
+    this.els.importTakeButton.addEventListener("click", () => this.els.takeFile.click());
+
+    this.els.takeFile.addEventListener("change", () => {
+      void this.importTake(this.els.takeFile);
+    });
+  }
+
+  /**
+   * Writes the loop out as a take file.
+   *
+   * Only layers that hold a take are written: a lane that was armed and never
+   * recorded is not a layer, and exporting an empty one would put a nameless
+   * row in the file. With nothing recorded there is nothing to export, so the
+   * button does nothing rather than saving an empty take the importer will
+   * reject.
+   */
+  private exportTake(): void {
+    const tracks = this.looper.tracks.flatMap((track) =>
+      track.take === null
+        ? []
+        : [
+            {
+              label: track.label,
+              mode: track.mode,
+              muted: track.muted,
+              take: track.take,
+            },
+          ],
+    );
+
+    if (tracks.length === 0) {
+      this.flashTransport("Nothing recorded to export");
+      return;
+    }
+
+    const text = serializeTakeDocument({
+      bpm: this.transport.tempo,
+      loopBeats: this.transport.loopBeats,
+      tracks,
+    });
+
+    downloadBlob(
+      new Blob([text], { type: "application/json" }),
+      takeDocumentFilename(new Date(), this.transport.loopBeats),
+    );
+  }
+
+  /**
+   * Reads a take file back in, replacing whatever is in play.
+   *
+   * The document's tempo and loop length are applied *before* the layers, so the
+   * grid the imported events were played against is the grid they will be
+   * replayed on. A take that arrived without its own grid would line up against
+   * whatever happened to be selected, which is how a loop goes out of phase with
+   * itself.
+   */
+  private async importTake(input: HTMLInputElement): Promise<void> {
+    const file = input.files?.[0];
+    // Clearing the input lets the same file be picked twice in a row.
+    input.value = "";
+    if (!file) return;
+
+    let parsed;
+    try {
+      parsed = parseTakeDocument(await file.text());
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "That take could not be read.";
+      this.flashTransport(reason);
+      console.warn(`${PROJECT_NAME}: could not import "${file.name}"`, error);
+      return;
+    }
+
+    // Every existing layer's channel is retired: its track is about to be gone,
+    // and a channel with no track would keep sounding forever.
+    for (const layer of this.layers.values()) layer.stop();
+    this.layers.clear();
+    this.layerFocus = null;
+
+    this.setTempo(parsed.bpm);
+    this.setBars(parsed.loopBeats / this.transport.beatsPerBar);
+
+    const seeds: LoopLayerSeed[] = parsed.tracks.map((track) => ({
+      label: track.label,
+      mode: track.mode,
+      muted: track.muted,
+      take: track.take,
+    }));
+
+    this.looper.replaceLayers(seeds);
+    this.flashTransport(`${seeds.length} layer${seeds.length === 1 ? "" : "s"} imported`);
   }
 
   /** Reads a picked file as an instrument, then switches to it. */
@@ -653,6 +775,7 @@ export class GestureSynthApp {
       this.els.transportControls,
       this.els.transportDisplay,
       this.els.layerControls,
+      this.els.takeControls,
     ];
 
     for (const control of controls) control.classList.toggle("hidden", !this.looping);
@@ -928,13 +1051,21 @@ export class GestureSynthApp {
 
     const { state } = this.looper;
 
-    this.els.transportDisplay.textContent = describeLooper({
-      state,
-      loopBars: this.transport.loopBars,
-      hasTake: this.looper.hasTake,
-      recordingLabel: this.looper.recordingLabel,
-      countdownBeats: this.looper.countdownBeats(ctxTime),
-    });
+    // A notice outranks the state readout while it lasts, because the whole
+    // point of saying "could not import" is that it is seen.
+    const notice = this.transportNotice;
+    const noticeActive = notice !== null && performance.now() < notice.until;
+    if (notice !== null && !noticeActive) this.transportNotice = null;
+
+    this.els.transportDisplay.textContent = noticeActive
+      ? notice.message
+      : describeLooper({
+          state,
+          loopBars: this.transport.loopBars,
+          hasTake: this.looper.hasTake,
+          recordingLabel: this.looper.recordingLabel,
+          countdownBeats: this.looper.countdownBeats(ctxTime),
+        });
 
     this.els.recordButton.classList.toggle("active", state === "recording" || state === "armed");
 
@@ -1336,6 +1467,11 @@ export class GestureSynthApp {
     if (this.menuId === "transport") {
       // The looper's controls, reachable without dropping a hand to the mouse —
       // which is the whole point of running the transport through the menu.
+      //
+      // Export belongs here; **import does not**. Export is a download, which a
+      // gesture can start. Import opens the operating system's file picker,
+      // which no gesture can drive — so it stays a button, and this menu stays
+      // honest about what it can reach.
       return {
         layout: "radial",
         items: [
@@ -1343,6 +1479,7 @@ export class GestureSynthApp {
           { id: "play", label: "Play" },
           { id: "stop", label: "Stop" },
           { id: "clear", label: "Clear" },
+          { id: EXPORT_TAKE_ID, label: "Save take" },
         ],
         activeId: this.looper.state,
       };
@@ -1469,6 +1606,9 @@ export class GestureSynthApp {
           return;
         case "clear":
           this.clearLoop();
+          return;
+        case EXPORT_TAKE_ID:
+          this.exportTake();
           return;
       }
       return;

@@ -239,6 +239,36 @@ body {
   text-decoration: line-through;
 }
 
+/*
+ * Carrying a take away and bringing one back. Quieter than the transport and
+ * the layers, because it is a between-performances action rather than something
+ * reached for mid-phrase.
+ */
+#takeControls {
+  position: absolute;
+  left: 12px;
+  top: 452px;
+  display: flex;
+  gap: 6px;
+  z-index: 5;
+}
+
+#takeControls button {
+  background: #1a1a1a;
+  color: #9a9aad;
+  border: 1px solid #3a3a48;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+#takeControls button:hover {
+  color: #e8a13d;
+  border-color: #e8a13d;
+}
+
 #helpButton {
   position: absolute;
   bottom: 16px;

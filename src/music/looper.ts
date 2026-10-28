@@ -47,6 +47,19 @@ export interface TrackHit {
   readonly event: TakeEvent;
 }
 
+/**
+ * A layer handed in from outside — an imported take, rather than a recording.
+ *
+ * It has no id because ids are the looper's to assign: an imported layer must
+ * not be able to collide with one already in play.
+ */
+export interface LoopLayerSeed {
+  readonly label: string;
+  readonly mode: InstrumentMode;
+  readonly muted: boolean;
+  readonly take: Take;
+}
+
 /** Whether a pending recording fills a new layer or replaces an existing one. */
 export type RecordKind = "new" | "rewrite";
 
@@ -238,6 +251,42 @@ export class Looper {
     this.transport.stop();
     this.abandonRecording();
     this.tracksValue.clear();
+  }
+
+  /**
+   * Replaces every layer with the ones from an imported take.
+   *
+   * Import *replaces* rather than merges, because a take is a performance: its
+   * layers were all played against one grid, and merging two performances that
+   * disagree about the loop length would produce something neither player ever
+   * played. The caller applies the document's tempo and loop length with it, so
+   * the grid arrives with the events that were played against it.
+   *
+   * Naming restarts at the imported layers, so recording after an import is
+   * `Chords 3` when three chord layers came in — not `Chords 1` again.
+   */
+  replaceLayers(seeds: readonly LoopLayerSeed[]): void {
+    this.transport.stop();
+    this.abandonRecording();
+    this.displaced = null;
+    this.tracksValue.clear();
+
+    this.layerCount = 0;
+    this.labelCounts.chord = 0;
+    this.labelCounts.mono = 0;
+
+    for (const seed of seeds) {
+      const id = `layer-${(this.layerCount += 1)}`;
+      this.labelCounts[seed.mode] += 1;
+
+      this.tracksValue.set(id, {
+        id,
+        label: seed.label,
+        mode: seed.mode,
+        take: seed.take,
+        muted: seed.muted,
+      });
+    }
   }
 
   /** Forgets one layer, retiring its channel with it. */

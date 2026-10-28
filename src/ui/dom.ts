@@ -34,6 +34,10 @@ export interface AppElements {
   readonly clearButton: HTMLButtonElement;
   readonly transportDisplay: HTMLElement;
   readonly layerControls: HTMLElement;
+  readonly takeControls: HTMLElement;
+  readonly exportTakeButton: HTMLButtonElement;
+  readonly importTakeButton: HTMLButtonElement;
+  readonly takeFile: HTMLInputElement;
   readonly helpButton: HTMLButtonElement;
   readonly helpModal: HTMLElement;
   readonly closeHelp: HTMLButtonElement;
@@ -87,6 +91,10 @@ export function getAppElements(): AppElements {
     clearButton: requireElement<HTMLButtonElement>("#clearButton"),
     transportDisplay: requireElement("#transportDisplay"),
     layerControls: requireElement("#layerControls"),
+    takeControls: requireElement("#takeControls"),
+    exportTakeButton: requireElement<HTMLButtonElement>("#exportTakeButton"),
+    importTakeButton: requireElement<HTMLButtonElement>("#importTakeButton"),
+    takeFile: requireElement<HTMLInputElement>("#takeFile"),
     helpButton: requireElement<HTMLButtonElement>("#helpButton"),
     helpModal: requireElement("#helpModal"),
     closeHelp: requireElement<HTMLButtonElement>("#closeHelp"),

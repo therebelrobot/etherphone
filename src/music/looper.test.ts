@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Transport } from "../audio/transport";
+import type { InstrumentMode } from "../types";
 import { describeLooper, Looper, trackLabel } from "./looper";
-import type { TrackHit } from "./looper";
+import type { LoopLayerSeed, TrackHit } from "./looper";
 import type { RecordedIntent } from "./recorder";
 
 const I_CHORD: RecordedIntent = {
@@ -306,6 +307,91 @@ describe("clearing", () => {
     looper.clear();
     expect(looper.tracks).toHaveLength(0);
     expect(looper.state).toBe("idle");
+  });
+});
+
+describe("importing a take", () => {
+  const seed = (label: string, mode: InstrumentMode, muted = false): LoopLayerSeed => ({
+    label,
+    mode,
+    muted,
+    take: {
+      bpm: 120,
+      loopBeats: 8,
+      events: [
+        {
+          kind: "chord",
+          beat: 0,
+          volume: 0.5,
+          tilt: 0,
+          numeral: "I",
+          isMajorMode: true,
+          qualityIndex: 1,
+          thumbDown: false,
+        },
+      ],
+    },
+  });
+
+  it("replaces whatever was in play with the imported layers", () => {
+    const { looper } = rig();
+    recordChords(looper);
+
+    looper.replaceLayers([seed("Chords 1", "chord"), seed("Mono 1", "mono", true)]);
+
+    expect(looper.tracks.map((track) => track.label)).toEqual(["Chords 1", "Mono 1"]);
+    expect(looper.tracks[1].muted).toBe(true);
+    expect(looper.tracks[0].take?.events).toHaveLength(1);
+  });
+
+  it("stops the clock, so an import does not inherit a running transport", () => {
+    const { transport, looper } = rig();
+    recordChords(looper);
+    expect(transport.isPlaying).toBe(true);
+
+    looper.replaceLayers([seed("Chords 1", "chord")]);
+
+    expect(transport.isPlaying).toBe(false);
+  });
+
+  it("plays the imported layers from the top", () => {
+    const { looper } = rig();
+
+    looper.replaceLayers([seed("Chords 1", "chord")]);
+    looper.play(0);
+
+    const hits = ticks(looper, [0, 0.1]);
+    expect(beats(hits)).toContain(0);
+    expect(trackIds(hits)).toContain(idOf(looper, "Chords 1"));
+  });
+
+  it("continues the numbering, so a new layer is not a second Chords 1", () => {
+    const { looper } = rig();
+
+    looper.replaceLayers([seed("Chords 1", "chord")]);
+    looper.record(0, "chord");
+
+    expect(looper.tracks.map((track) => track.label)).toEqual(["Chords 1", "Chords 2"]);
+  });
+
+  it("forgets an armed recording rather than merging it with the import", () => {
+    const { looper } = rig();
+    looper.record(0, "chord");
+
+    looper.replaceLayers([seed("Chords 1", "chord")]);
+
+    expect(looper.tracks).toHaveLength(1);
+    expect(looper.recordingId).toBeNull();
+  });
+
+  it("leaves nothing behind when the import is empty", () => {
+    const { looper } = rig();
+    recordChords(looper);
+
+    looper.replaceLayers([]);
+
+    expect(looper.tracks).toHaveLength(0);
+    expect(looper.hasTake).toBe(false);
   });
 });
 
