@@ -62,6 +62,7 @@ import { describeLooper, GAIN_STEP, Looper } from "./music/looper";
 import type { LoopLayerSeed, LoopTrack, TrackId } from "./music/looper";
 import { MonoReader, monoNoteLabel, monoNumeral, pluckDecayFor, snapLabel } from "./music/mono";
 import { ChordStabilizer } from "./music/stabilizer";
+import { ModifierArmer } from "./music/modifier";
 import { resolveTakeEvent } from "./music/take";
 import type { ResolvedEvent } from "./music/take";
 import {
@@ -81,7 +82,6 @@ import type {
   ChordState,
   GestureMap,
   Hand,
-  HandShape,
   Handedness,
   InstrumentMode,
   KeyName,
@@ -1171,9 +1171,7 @@ export class GestureSynthApp {
    * map must not silently apply to the next one.
    */
   private resetTranspose(): void {
-    this.pendingTranspose = 0;
-    this.shapeShift = 0;
-    this.lastChordShape = null;
+    this.modifier.reset();
   }
 
   /** Swaps which hand plays the chord vocabulary, keeping both maps. */
@@ -1494,8 +1492,8 @@ export class GestureSynthApp {
     this.hud.setQuality(
       // An armed shift outranks the voicing label: it is the thing about to
       // change, and the voicing is not.
-      this.pendingTranspose > 0
-        ? `Modifier +${this.pendingTranspose}`
+      this.modifier.armed > 0
+        ? `Modifier +${this.modifier.armed}`
         : getVoicingLabel(isMajorMode, qualityIndex),
       thumbDown,
     );
@@ -2396,17 +2394,11 @@ export class GestureSynthApp {
   /**
    * Transpositions armed by the map's modifier shape, waiting for a chord.
    *
-   * Held rather than consumed per frame: the chord hand holds one shape for as
-   * long as the chord lasts, so a shift that cleared on the first frame would
-   * snap back on the second.
+   * The state machine lives in `ModifierArmer` so that "an arm is a visit, not a
+   * frame" is tested rather than merely intended; this class only feeds it the
+   * chord hand's shape and applies what comes back.
    */
-  private pendingTranspose = 0;
-
-  /** The chord shape the current shift was applied to, so it is applied once. */
-  private lastChordShape: HandShape | null = null;
-
-  /** The shift in force for that shape. */
-  private shapeShift = 0;
+  private readonly modifier = new ModifierArmer();
 
   /** Each hand's own map id, so swapping hands does not throw a vocabulary away. */
   private mapIds: Record<Handedness, string> = {
@@ -2493,34 +2485,22 @@ export class GestureSynthApp {
     // tilt and the thumb are both mirrored between hands.
     if (chordLandmarks) {
       const shape = readHandShape(chordLandmarks, chordHand);
-      const modifier = this.gestureMap.transposeShape;
-
-      // The modifier arms rather than plays. Arming twice shifts twice, which is
-      // how one shape reaches the far side of the scale.
-      if (modifier !== null && modifier !== undefined && shape === modifier) {
-        this.pendingTranspose += 1;
-        this.lastChordShape = null;
-        return null;
-      }
-
-      // A shift is consumed when the shape *changes*, not when the frame does.
-      if (shape !== this.lastChordShape) {
-        this.lastChordShape = shape;
-        this.shapeShift = this.pendingTranspose;
-        this.pendingTranspose = 0;
-      }
-
       const read = classifyChord(chordLandmarks, chordHand, this.gestureMap);
+
+      // The modifier arms rather than plays. One arm per *visit* to the shape, and
+      // a rest between two arms spends nothing — see `ModifierArmer`.
+      const transpose = this.modifier.read(shape, read, this.gestureMap.transposeShape);
+      if (transpose.arming) return null;
 
       // A shift of zero is the common case, and the map lookup is already done,
       // so only a genuinely armed shape pays for the numeral arithmetic.
-      chord = read === null || this.shapeShift === 0 ? read : shiftNumeral(read, this.shapeShift);
+      chord = read === null || transpose.shift === 0 ? read : shiftNumeral(read, transpose.shift);
       isMajorMode = getHandHorizontalTilt(chordLandmarks, chordHand) >= 0;
     } else {
-      // The hand dropped, so the next shape is a fresh decision rather than a
-      // continuation of the last one.
-      this.lastChordShape = null;
-      this.shapeShift = 0;
+      // The hand dropped, so the next chord is a fresh decision rather than a
+      // continuation of the last one. The arming itself survives, because it is a
+      // promise about the next chord and not about the shape in hand.
+      this.modifier.read(null, null, this.gestureMap.transposeShape);
     }
 
     // The expression hand chooses the voicing and whether it drops an octave.

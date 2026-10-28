@@ -387,6 +387,22 @@ a separate setting, because a shape's job is exactly what a slot decides — and
 meant no picker for thirty-two shapes and no eighth character in the encoding. Arming
 is shown in the HUD, and a change of map or hand clears it.
 
+The two rules that make it playable, and that the first version got wrong:
+
+- **One arm per visit to the shape, not per frame.** The chord hand holds a shape for
+  as long as the chord lasts, so a hand resting in the modifier for a second is _one_
+  arm. Counting frames made it one per frame — and because the numeral arithmetic wraps
+  at seven, the shift was not merely large but arbitrary, decided by how long the player
+  happened to hold still.
+- **A rest between arms spends nothing.** Arms are spent by _chords_, not by shapes, so
+  modifier → neutral → modifier → chord is two degrees. That is how one shape reaches
+  the far side of the scale; the neutral hand in between is the rest between two arms,
+  and it must not consume the first. Arming seven times returns you to the degree you
+  started on, so the useful reach is +1 to +6.
+
+A shift belongs to the chord shape it was spent on, so holding one chord does not
+re-shift every frame — the same rule as the arming, in the other direction.
+
 #### Mono mode
 
 One note at a time, chosen by the chord hand's height and quantised to the key, over a
