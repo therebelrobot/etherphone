@@ -83,7 +83,16 @@ export interface MenuControllerOptions {
 
 /** A menu whose values are too many for a ring, so it opens as a list. */
 export type MenuTopic =
-  "vocabulary" | "key" | "instrument" | "tempo" | "loop" | "layers" | "transport" | "settings";
+  | "vocabulary"
+  /** The gesture-map editor. Reached from Vocabulary, never from the left ring. */
+  | "map"
+  | "key"
+  | "instrument"
+  | "tempo"
+  | "loop"
+  | "layers"
+  | "transport"
+  | "settings";
 
 /** The menus the left hand chooses between. */
 export const MENU_TOPICS: readonly MenuOption[] = [

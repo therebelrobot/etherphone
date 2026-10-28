@@ -34,6 +34,7 @@ import { getChordDisplayName, getChordTones } from "./music/harmony";
 import {
   CUSTOM_MAP_ID,
   CUSTOM_MAP_LABEL,
+  CUSTOM_MAP_SLOTS,
   customMapFromSlots,
   decodeCustomMap,
   encodeCustomMap,
@@ -113,6 +114,23 @@ const LOOPING_ID = "looping";
 
 /** The id of the entry that flips how long a recording waits to begin. */
 const ARM_UNIT_ID = "arm-unit";
+
+/**
+ * The id of the "edit my map" entry in the vocabulary menu.
+ *
+ * The editor lives inside Vocabulary rather than in the left-hand ring, because
+ * a map is a *vocabulary* and that is where a player already goes to choose one.
+ */
+const EDIT_MAP_ID = "edit-map";
+
+/** The id of the "this shape plays nothing" choice in the editor. */
+const SILENT_SLOT_ID = "none";
+
+/** The id of the step back out of a shape, to the list of shapes. */
+const MAP_BACK_ID = "map-back";
+
+/** The degrees a shape can be given, in the order a scale runs. */
+const NUMERALS_SET: readonly ChordNumeral[] = ["I", "II", "III", "IV", "V", "VI", "VII"];
 
 /**
  * The id of the "save the take" entry in the transport menu.
@@ -1526,6 +1544,7 @@ export class GestureSynthApp {
       // The next open starts on the vocabulary again, not wherever this one was.
       this.menuId = "vocabulary";
       this.layerFocus = null;
+      this.customSlotFocus = null;
       return false;
     }
 
@@ -1722,12 +1741,70 @@ export class GestureSynthApp {
       };
     }
 
-    const vocabulary = this.mode === "mono" ? this.els.monoStyleSelect : this.els.gestureMapSelect;
+    if (this.menuId === "map") {
+      return this.mapEditorCluster();
+    }
+
+    if (this.mode === "mono") {
+      return {
+        layout: "radial",
+        items: asOptions(this.els.monoStyleSelect),
+        activeId: this.els.monoStyleSelect.value,
+      };
+    }
+
+    // In Chords mode the vocabulary menu is the map picker, plus the way into
+    // the editor. Putting it here means a player who has just picked Custom is
+    // one dwell from changing it, rather than having to find a second menu.
+    return {
+      layout: "radial",
+      items: [...asOptions(this.els.gestureMapSelect), { id: EDIT_MAP_ID, label: "Edit map…" }],
+      activeId: this.els.gestureMapSelect.value,
+    };
+  }
+
+  /**
+   * The editor: seven shapes, then what each one plays.
+   *
+   * Two steps on purpose, and the same shape as the Layers drill-down. A single
+   * cluster offering every shape against every degree would be a grid, and a
+   * hand that is coarse enough to pick a direction cannot pick a cell. So the
+   * first step says *which shape*, the second says *what it does*, and the
+   * second step stays open so several shapes can be changed in one visit.
+   */
+  private mapEditorCluster(): {
+    layout: MenuLayout;
+    items: readonly MenuOption[];
+    activeId?: string;
+  } {
+    const slots = this.customSlots ?? slotsFromMap(this.gestureMap);
+    const focused = CUSTOM_MAP_SLOTS.find((slot) => slot.id === this.customSlotFocus);
+
+    if (!focused) {
+      return {
+        layout: "radial",
+        items: CUSTOM_MAP_SLOTS.map((slot) => ({
+          id: slot.id,
+          label: `${slot.label} → ${slot.read(slots) ?? "—"}`,
+          keepsMenuOpen: true,
+        })),
+      };
+    }
+
+    const numeral = focused.read(slots);
 
     return {
       layout: "radial",
-      items: asOptions(vocabulary),
-      activeId: vocabulary.value,
+      items: [
+        ...NUMERALS_SET.map((option) => ({
+          id: option,
+          label: option,
+          keepsMenuOpen: true,
+        })),
+        { id: SILENT_SLOT_ID, label: "Nothing", keepsMenuOpen: true },
+        { id: MAP_BACK_ID, label: "Back", keepsMenuOpen: true },
+      ],
+      activeId: numeral ?? SILENT_SLOT_ID,
     };
   }
 
@@ -1743,6 +1820,7 @@ export class GestureSynthApp {
       // open and the right hand picks up from the new list.
       this.menuId = choice.id as MenuTopic;
       this.layerFocus = null;
+      this.customSlotFocus = null;
       return;
     }
 
@@ -1843,11 +1921,55 @@ export class GestureSynthApp {
       return;
     }
 
+    if (this.menuId === "vocabulary" && choice.id === EDIT_MAP_ID) {
+      // Editing implies the map being edited, so choosing the editor chooses
+      // Custom — seeded from whatever was in play on the way in.
+      this.setGestureMap(CUSTOM_MAP_ID);
+      this.menuId = "map";
+      this.customSlotFocus = null;
+      return;
+    }
+
+    if (this.menuId === "map") {
+      this.applyMapEdit(choice.id);
+      return;
+    }
+
     if (this.mode === "mono") {
       this.setMonoStyle(choice.id as MonoStyle);
     } else {
       this.setGestureMap(choice.id);
     }
+  }
+
+  /**
+   * One step of the map editor: choose a shape, or give it a degree.
+   *
+   * The assignment stays open, so a player can set seven shapes without
+   * reopening the menu between each — which at three deliberate steps per open
+   * would be most of the work of editing.
+   */
+  private applyMapEdit(id: string): void {
+    if (!this.customSlotFocus) {
+      if (CUSTOM_MAP_SLOTS.some((slot) => slot.id === id)) this.customSlotFocus = id;
+      return;
+    }
+
+    if (id === MAP_BACK_ID) {
+      this.customSlotFocus = null;
+      return;
+    }
+
+    const focused = CUSTOM_MAP_SLOTS.find((slot) => slot.id === this.customSlotFocus);
+    if (!focused) return;
+
+    const numeral =
+      id === SILENT_SLOT_ID ? null : (NUMERALS_SET.find((candidate) => candidate === id) ?? null);
+
+    this.customSlots = focused.write(this.customSlots ?? slotsFromMap(this.gestureMap), numeral);
+    this.saveCustomMap();
+    this.gestureMap = customMapFromSlots(this.customSlots);
+    this.refreshHelp();
   }
 
   /** How long a recording waits to begin: the next bar line, or the next beat. */
@@ -1860,6 +1982,9 @@ export class GestureSynthApp {
   private menuId: MenuTopic = "vocabulary";
   /** Which layer the Layers menu is working on, once one has been handed over. */
   private layerFocus: TrackId | null = null;
+
+  /** Which custom-map shape the editor is working on, once one has been chosen. */
+  private customSlotFocus: string | null = null;
   /** Whether one hand drives the whole menu, a stage at a time. */
   private singleHanded = false;
   /**
