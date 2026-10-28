@@ -139,6 +139,14 @@ access. The camera only works on `localhost` or over HTTPS — browsers block
 | `npm run coverage`  | Vitest with a V8 coverage report      |
 | `npm run samples`   | Regenerate the bundled sample WAVs    |
 
+Two measurement harnesses back decisions that would otherwise be assertions in
+an issue. Both are described in their own headers:
+
+| Script                          | What it does                                                          |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `npm run benchmark:pitch-shift` | Re-derives RFC #11's substrate call — plain JS, not WASM. Runs in CI. |
+| `npm run spike:capture`         | Opens RFC #12's capture measurement page on `localhost:5199`.         |
+
 ## Architecture
 
 The instrument is a pipeline. Each stage is its own module, and only `src/app.ts`

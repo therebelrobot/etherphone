@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Etherphone — capture spike (RFC #12)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 2rem;
+        background: #0d0d10;
+        color: #e8e8ef;
+        font:
+          14px/1.55 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      h1 {
+        font-size: 1.1rem;
+        letter-spacing: 0.04em;
+        margin: 0 0 0.25rem;
+      }
+      p.lede {
+        max-width: 62ch;
+        color: #a5a5b8;
+        margin: 0 0 1.5rem;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        align-items: flex-start;
+      }
+      canvas,
+      video {
+        background: #000;
+        border: 1px solid #2a2a34;
+        border-radius: 6px;
+        display: block;
+      }
+      video {
+        display: none;
+      }
+      label {
+        display: block;
+        margin-bottom: 0.75rem;
+      }
+      select,
+      input,
+      button {
+        background: #17171d;
+        color: inherit;
+        border: 1px solid #33333f;
+        border-radius: 4px;
+        padding: 0.35rem 0.55rem;
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        border-color: #4b4b5e;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      pre {
+        background: #14141a;
+        border: 1px solid #26262f;
+        border-radius: 6px;
+        padding: 1rem;
+        max-width: 70ch;
+        overflow: auto;
+        min-height: 12rem;
+        white-space: pre-wrap;
+      }
+      table {
+        border-collapse: collapse;
+        margin: 1rem 0;
+      }
+      th,
+      td {
+        border: 1px solid #2a2a34;
+        padding: 0.3rem 0.7rem;
+        text-align: left;
+      }
+      th {
+        color: #a5a5b8;
+        font-weight: 500;
+      }
+      .warn {
+        color: #ffcf6b;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Capture spike — RFC #12</h1>
+    <p class="lede">
+      Measures the live path before it is committed to: a canvas composite at 720p or 1080p,
+      recorded through <code>MediaRecorder</code> with <code>CanvasCaptureMediaStreamTrack</code> at
+      30&nbsp;fps and an audio track, for a set duration. Run it in each browser you care about and
+      keep the JSON. Serve it with <code>npm run spike:capture</code> — the camera needs a secure
+      context, and <code>localhost</code> counts.
+    </p>
+
+    <div class="row">
+      <div>
+        <label>
+          Composite size
+          <select id="size">
+            <option value="1280x720" selected>720p (1280×720)</option>
+            <option value="1920x1080">1080p (1920×1080)</option>
+          </select>
+        </label>
+        <label>
+          Duration (seconds)
+          <input id="seconds" type="number" min="5" max="300" value="30" />
+        </label>
+        <label>
+          Recorder bitrate (Mbps, 0 = browser default)
+          <input id="bitrate" type="number" min="0" max="40" step="0.5" value="0" />
+        </label>
+        <button id="run">Run capture</button>
+        <button id="stop" disabled>Stop</button>
+        <p class="warn" id="status">idle</p>
+      </div>
+      <div>
+        <canvas id="stage" width="1280" height="720"></canvas>
+      </div>
+    </div>
+
+    <div id="results"></div>
+    <pre id="json"></pre>
+
+    <script type="module">
+      // The overlay is faked: a synthetic hand that moves, drawn the way the
+      // real overlay draws one. Keep a real camera on the canvas, because the
+      // decoder is part of what is being measured.
+      const sizeEl = document.getElementById("size");
+      const secondsEl = document.getElementById("seconds");
+      const bitrateEl = document.getElementById("bitrate");
+      const runEl = document.getElementById("run");
+      const stopEl = document.getElementById("stop");
+      const statusEl = document.getElementById("status");
+      const stage = document.getElementById("stage");
+      const ctx = stage.getContext("2d");
+      const resultsEl = document.getElementById("results");
+      const jsonEl = document.getElementById("json");
+
+      const video = document.createElement("video");
+      video.playsInline = true;
+      video.muted = true;
+      document.body.append(video);
+
+      const FPS_TARGET = 30;
+      let recording = null;
+      let compositor = null;
+      let stats = null;
+
+      function synthHand(t) {
+        const wobble = Math.sin(t * 0.7) * 0.06;
+        return Array.from({ length: 21 }, (_, i) => ({
+          x: 0.35 + (i / 21) * 0.3 + wobble,
+          y: 0.45 + Math.sin(t * 1.3 + i / 3) * 0.12,
+        }));
+      }
+
+      function drawComposite(t) {
+        ctx.clearRect(0, 0, stage.width, stage.height);
+        ctx.drawImage(video, 0, 0, stage.width, stage.height);
+
+        // Landmark overlay, plus the energy ribbon — the two things that would
+        // have to keep up with the camera on a laptop running inference.
+        ctx.save();
+        ctx.strokeStyle = "rgba(120, 220, 255, 0.85)";
+        ctx.lineWidth = 2;
+        for (const point of synthHand(t)) {
+          ctx.beginPath();
+          ctx.arc(point.x * stage.width, point.y * stage.height, 3, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        for (let i = 0; i <= 64; i += 1) {
+          const x = (i / 64) * stage.width;
+          const y = stage.height * (0.5 + Math.sin(t * 2 + i / 6) * 0.08);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = "rgba(255, 200, 120, 0.7)";
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function tick() {
+        if (!compositor) return;
+        const now = performance.now();
+        const t = now / 1000;
+
+        drawComposite(t);
+        stats.frames += 1;
+        stats.lastFrameAt = now;
+        stats.maxGapMs = Math.max(stats.maxGapMs, now - stats.previousFrameAt);
+        stats.previousFrameAt = now;
+
+        compositor = requestAnimationFrame(tick);
+      }
+
+      function memoryMb() {
+        const memory = performance.memory;
+        return memory ? Math.round(memory.usedJSHeapSize / 1048576) : null;
+      }
+
+      async function run() {
+        const [width, height] = sizeEl.value.split("x").map(Number);
+        const durationMs = Number(secondsEl.value) * 1000;
+        const bitrate = Number(bitrateEl.value) * 1_000_000;
+
+        stage.width = width;
+        stage.height = height;
+
+        runEl.disabled = true;
+        stopEl.disabled = false;
+        resultsEl.innerHTML = "";
+        jsonEl.textContent = "";
+        statusEl.textContent = "requesting camera…";
+
+        const camera = await navigator.mediaDevices.getUserMedia({
+          video: { width, height },
+        });
+        video.srcObject = camera;
+        await video.play();
+
+        const audioCtx = new AudioContext();
+        const oscillator = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const destination = audioCtx.createMediaStreamDestination();
+        gain.gain.value = 0.05;
+        oscillator.connect(gain).connect(destination);
+        oscillator.start();
+
+        const canvasStream = stage.captureStream(FPS_TARGET);
+        const stream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...destination.stream.getAudioTracks(),
+        ]);
+
+        const mimeType = ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4"].find(
+          (candidate) => MediaRecorder.isTypeSupported(candidate),
+        );
+
+        stats = {
+          startedAt: performance.now(),
+          frames: 0,
+          maxGapMs: 0,
+          previousFrameAt: performance.now(),
+          lastFrameAt: performance.now(),
+          heapBeforeMb: memoryMb(),
+          chunks: 0,
+          bytes: 0,
+        };
+
+        const recorder = new MediaRecorder(stream, {
+          ...(mimeType ? { mimeType } : {}),
+          ...(bitrate > 0 ? { videoBitsPerSecond: bitrate } : {}),
+        });
+
+        recorder.ondataavailable = (event) => {
+          stats.chunks += 1;
+          stats.bytes += event.data.size;
+        };
+
+        recording = recorder;
+        compositor = requestAnimationFrame(tick);
+        recorder.start(1000);
+        statusEl.textContent = `recording ${sizeEl.value} for ${secondsEl.value}s…`;
+
+        await new Promise((resolve) => setTimeout(resolve, durationMs));
+        await stop();
+
+        for (const track of camera.getTracks()) track.stop();
+        oscillator.stop();
+        await audioCtx.close();
+      }
+
+      async function stop() {
+        if (!recording || recording.state === "inactive") return;
+        stopEl.disabled = true;
+
+        await new Promise((resolve) => {
+          recording.onstop = resolve;
+          recording.stop();
+        });
+
+        if (compositor) cancelAnimationFrame(compositor);
+        compositor = null;
+
+        const elapsedMs = performance.now() - stats.startedAt;
+        const report = {
+          measuredAt: new Date().toISOString(),
+          userAgent: navigator.userAgent,
+          composite: sizeEl.value,
+          requestedFps: FPS_TARGET,
+          durationSeconds: Number(secondsEl.value),
+          mimeType: recording.mimeType,
+          videoBitsPerSecond:
+            Number(bitrateEl.value) > 0 ? Number(bitrateEl.value) * 1_000_000 : "default",
+
+          compositeFps: Number((stats.frames / (elapsedMs / 1000)).toFixed(1)),
+          longestCompositeGapMs: Number(stats.maxGapMs.toFixed(1)),
+          jankyFrames: stats.maxGapMs > 1000 / FPS_TARGET ? 1 : 0,
+
+          chunks: stats.chunks,
+          totalBytes: stats.bytes,
+          megabytesPerMinute: Number(((stats.bytes / 1048576) * (60000 / elapsedMs)).toFixed(1)),
+          elapsedMs: Math.round(elapsedMs),
+
+          heapBeforeMb: stats.heapBeforeMb,
+          heapAfterMb: memoryMb(),
+        };
+
+        // Offline render, for the RFC's third measurement: how long a
+        // deterministic render takes relative to the take it renders.
+        report.offlineRenderMs = await measureOfflineRender(report.durationSeconds);
+        report.offlineRenderRatio = Number(
+          (report.offlineRenderMs / (report.durationSeconds * 1000)).toFixed(3),
+        );
+
+        render(report);
+        statusEl.textContent = "done — copy the JSON below";
+        runEl.disabled = false;
+        recording = null;
+      }
+
+      /**
+       * Renders `seconds` of a small synthetic graph through
+       * `OfflineAudioContext`, and reports the wall time. The absolute work is
+       * not the point — the *ratio* against the take's own length is, because
+       * that is what decides whether an offline export is imperceptible.
+       */
+      async function measureOfflineRender(seconds) {
+        const frames = Math.round(seconds * 48000);
+        const started = performance.now();
+        const offline = new OfflineAudioContext(2, frames, 48000);
+
+        // Four layers, which is what the instrument now produces: a chord bed,
+        // a melody, a kit, and a voice loop.
+        for (let layer = 0; layer < 4; layer += 1) {
+          const oscillator = offline.createOscillator();
+          const gain = offline.createGain();
+          oscillator.type = layer % 2 === 0 ? "sawtooth" : "sine";
+          oscillator.frequency.value = 110 * (layer + 1);
+          gain.gain.value = 0.08;
+          oscillator.connect(gain).connect(offline.destination);
+          oscillator.start(0);
+          oscillator.stop(seconds);
+        }
+
+        await offline.startRendering();
+        return Math.round(performance.now() - started);
+      }
+
+      function render(report) {
+        const rows = Object.entries(report)
+          .map(([key, value]) => `<tr><th>${key}</th><td>${value}</td></tr>`)
+          .join("");
+        resultsEl.innerHTML = `<table>${rows}</table>`;
+        jsonEl.textContent = JSON.stringify(report, null, 2);
+      }
+
+      runEl.addEventListener("click", () => {
+        run().catch((error) => {
+          statusEl.textContent = `failed: ${error.name} — ${error.message}`;
+          runEl.disabled = false;
+          stopEl.disabled = true;
+        });
+      });
+      stopEl.addEventListener("click", () => void stop());
+    </script>
+  </body>
+</html>
