@@ -212,7 +212,7 @@ export class Looper {
       trackId: id,
       label: this.tracksValue.get(id)?.label ?? "",
       mode,
-      targetBeat: this.transport.nextBarBeat(ctxTime),
+      targetBeat: this.transport.nextArmBeat(ctxTime),
     };
   }
 
@@ -228,7 +228,7 @@ export class Looper {
       trackId: id,
       label: track.label,
       mode: track.mode,
-      targetBeat: this.transport.nextBarBeat(ctxTime),
+      targetBeat: this.transport.nextArmBeat(ctxTime),
     };
   }
 
@@ -437,9 +437,10 @@ export class Looper {
     const armed = this.armed;
     if (!armed) return;
 
-    // The first layer sets the loop's phase at its own bar line. Later layers
-    // are rotated onto that grid, so they can begin at any bar rather than
-    // waiting for the top of the loop.
+    // The first layer sets the loop's phase at the line it was armed onto — a
+    // bar line by default, a beat line when the player has asked to drop in
+    // faster. Later layers are rotated onto that grid, so they can begin at any
+    // line rather than waiting for the top of the loop.
     if (armed.kind === "new" && !this.hasTake) this.originBeat = armed.targetBeat;
 
     const existing = this.tracksValue.get(armed.trackId);

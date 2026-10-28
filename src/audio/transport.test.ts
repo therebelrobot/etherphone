@@ -79,6 +79,35 @@ describe("nextBarBeat", () => {
   });
 });
 
+describe("nextArmBeat", () => {
+  it("waits for the bar line by default", () => {
+    const clock = transport();
+    clock.start(0);
+
+    expect(clock.armUnit).toBe("bar");
+    expect(clock.nextArmBeat(0)).toBe(4);
+  });
+
+  it("waits only for the next beat when asked to", () => {
+    const clock = transport();
+    clock.start(0);
+    clock.setArmUnit("beat");
+
+    // 120 BPM: one beat is half a second, so every 0.5s is a line.
+    expect(clock.nextArmBeat(0)).toBe(1);
+    expect(clock.nextArmBeat(0.6)).toBe(2);
+    // One second is beat 2, and a line is never the current one — so beat 3.
+    expect(clock.nextArmBeat(1)).toBe(3);
+  });
+
+  it("can be set at construction, for a remembered choice", () => {
+    const clock = new Transport({ bpm: 120, beatsPerBar: 4, loopBars: 2, armUnit: "beat" });
+    clock.start(0);
+
+    expect(clock.nextArmBeat(0)).toBe(1);
+  });
+});
+
 describe("ctxTimeForBeat", () => {
   it("is the inverse of elapsedBeats", () => {
     const clock = transport();

@@ -18,7 +18,18 @@ export interface TransportOptions {
   readonly bpm?: number;
   readonly beatsPerBar?: number;
   readonly loopBars?: number;
+  readonly armUnit?: ArmUnit;
 }
+
+/**
+ * Where a recording is allowed to begin.
+ *
+ * A *bar* is the musical default: everything lines up, and a player has time to
+ * get their hands in place during the count-in. A *beat* starts four times
+ * sooner, which is what you want when adding a one-bar part over a part you can
+ * already hear — waiting a whole bar to drop in a hi-hat is a long wait.
+ */
+export type ArmUnit = "bar" | "beat";
 
 export class Transport {
   private bpmValue: number;
@@ -31,10 +42,13 @@ export class Transport {
   /** Elapsed beats at {@link originCtx}. */
   private originBeat = 0;
 
+  private armUnitValue: ArmUnit;
+
   constructor(options: TransportOptions = {}) {
     this.bpmValue = options.bpm ?? TRANSPORT.defaultBpm;
     this.beatsPerBarValue = options.beatsPerBar ?? TRANSPORT.beatsPerBar;
     this.loopBarsValue = options.loopBars ?? TRANSPORT.defaultBars;
+    this.armUnitValue = options.armUnit ?? "bar";
   }
 
   get tempo(): number {
@@ -82,6 +96,15 @@ export class Transport {
     this.loopBarsValue = Math.max(1, Math.round(bars));
   }
 
+  /** Where a recording is allowed to begin. Takes effect on the next arm. */
+  get armUnit(): ArmUnit {
+    return this.armUnitValue;
+  }
+
+  setArmUnit(unit: ArmUnit): void {
+    this.armUnitValue = unit;
+  }
+
   /** Starts the clock at `ctxTime`, with the playhead at `atBeat`. */
   start(ctxTime: number, atBeat = 0): void {
     this.playing = true;
@@ -110,9 +133,22 @@ export class Transport {
 
   /** The first bar line strictly after `ctxTime`, as an absolute beat count. */
   nextBarBeat(ctxTime: number): number {
-    const bars = Math.floor(this.elapsedBeats(ctxTime) / this.beatsPerBarValue) + 1;
+    return this.nextGridBeat(ctxTime, this.beatsPerBarValue);
+  }
 
-    return bars * this.beatsPerBarValue;
+  /** Where a recording armed now would begin. */
+  nextArmBeat(ctxTime: number): number {
+    return this.nextGridBeat(ctxTime, this.armUnitValue === "bar" ? this.beatsPerBarValue : 1);
+  }
+
+  /**
+   * The first multiple of `every` beats strictly after `ctxTime`.
+   *
+   * Strictly after, not at: arming *on* a line would start a recording at the
+   * instant it was asked for, which is the one moment it cannot have a count-in.
+   */
+  private nextGridBeat(ctxTime: number, every: number): number {
+    return (Math.floor(this.elapsedBeats(ctxTime) / every) + 1) * every;
   }
 
   /** The context time at which an absolute beat occurs. */

@@ -171,6 +171,18 @@ export const TRANSPORT = {
 export const TEMPO_STORAGE_KEY = "etherphone.tempo";
 export const BARS_STORAGE_KEY = "etherphone.bars";
 
+/** Where the recording is allowed to begin, from {@link ARM_UNIT_CHOICES}. */
+export const ARM_UNIT_STORAGE_KEY = "etherphone.arm-unit";
+
+/**
+ * How long a player waits for their recording to start.
+ *
+ * A bar is the musical default and gives a count-in to get the hands in place;
+ * a beat starts four times sooner, for dropping a part in over one already
+ * playing.
+ */
+export const ARM_UNIT_CHOICES = ["bar", "beat"] as const;
+
 /**
  * Where the looper's on/off setting is remembered.
  *

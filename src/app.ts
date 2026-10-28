@@ -11,11 +11,14 @@
 import type { HandLandmarker, HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import { SynthEngine } from "./audio/synth-engine";
 import { Transport } from "./audio/transport";
+import type { ArmUnit } from "./audio/transport";
 import { defineUserSample, defineUserWavetable } from "./audio/user-voices";
 import { listVoices, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
 import type { VoiceDefinition, VoiceKind } from "./audio/voice";
 import { DEFAULT_VOICE_ID } from "./audio/voices";
 import {
+  ARM_UNIT_CHOICES,
+  ARM_UNIT_STORAGE_KEY,
   BARS_STORAGE_KEY,
   GESTURE_MAP_STORAGE_KEY,
   LOOPING_STORAGE_KEY,
@@ -95,6 +98,9 @@ const ONE_HANDED_ID = "one-handed";
 
 /** The id of the looper's on/off switch, which is likewise not a value. */
 const LOOPING_ID = "looping";
+
+/** The id of the entry that flips how long a recording waits to begin. */
+const ARM_UNIT_ID = "arm-unit";
 
 /**
  * The id of the "save the take" entry in the transport menu.
@@ -292,6 +298,7 @@ export class GestureSynthApp {
     this.monoStyle = restoreSelect(this.els.monoStyleSelect, MONO_STYLE_STORAGE_KEY) as MonoStyle;
     this.singleHanded = this.readStoredSingleHanded();
     this.looping = this.readStoredLooping();
+    this.setArmUnit(this.readStoredArmUnit());
     this.renderInstruments(DEFAULT_VOICE_ID);
     this.renderGestureMaps();
     this.renderTransportChoices();
@@ -760,6 +767,23 @@ export class GestureSynthApp {
   private setSingleHanded(enabled: boolean): void {
     this.singleHanded = enabled;
     remember(SINGLE_HANDED_STORAGE_KEY, enabled ? "on" : "off");
+  }
+
+  /** Reads the remembered arm unit, ignoring anything that is not a choice. */
+  private readStoredArmUnit(): ArmUnit {
+    try {
+      const stored = window.localStorage.getItem(ARM_UNIT_STORAGE_KEY);
+      return ARM_UNIT_CHOICES.find((choice) => choice === stored) ?? "bar";
+    } catch {
+      return "bar";
+    }
+  }
+
+  /** Changes how long a recording waits to begin, and remembers it. */
+  private setArmUnit(unit: ArmUnit): void {
+    this.armUnit = unit;
+    this.transport.setArmUnit(unit);
+    remember(ARM_UNIT_STORAGE_KEY, unit);
   }
 
   /** Reads the remembered looping setting. On unless it was turned off. */
@@ -1563,14 +1587,28 @@ export class GestureSynthApp {
         keepsMenuOpen: true,
       };
 
+      // Where a recording begins. A setting rather than a transport control,
+      // because it is decided once and then not thought about again — the
+      // transport's own entries are the ones reached for mid-phrase.
+      const armUnit: MenuOption = {
+        id: ARM_UNIT_ID,
+        label: `Arm on: ${this.armUnit}`,
+        keepsMenuOpen: true,
+      };
+
+      const items: MenuOption[] = [
+        { id: "chord", label: "Chords", keepsMenuOpen: true },
+        { id: "mono", label: "Mono", keepsMenuOpen: true },
+        oneHanded,
+        looping,
+      ];
+
+      // Only meaningful while the looper is on, matching Transport and Layers.
+      if (this.looping) items.splice(2, 0, armUnit);
+
       return {
         layout: "radial",
-        items: [
-          { id: "chord", label: "Chords", keepsMenuOpen: true },
-          { id: "mono", label: "Mono", keepsMenuOpen: true },
-          oneHanded,
-          looping,
-        ],
+        items,
         activeId: this.mode,
       };
     }
@@ -1607,6 +1645,11 @@ export class GestureSynthApp {
 
       if (choice.id === ONE_HANDED_ID) {
         this.setSingleHanded(!this.singleHanded);
+        return;
+      }
+
+      if (choice.id === ARM_UNIT_ID) {
+        this.setArmUnit(this.armUnit === "bar" ? "beat" : "bar");
         return;
       }
 
@@ -1687,6 +1730,9 @@ export class GestureSynthApp {
       this.setGestureMap(choice.id);
     }
   }
+
+  /** How long a recording waits to begin: the next bar line, or the next beat. */
+  private armUnit: ArmUnit = "bar";
 
   /** Which menu the left hand has chosen, and the right hand is choosing within. */
   private menuId: MenuTopic = "vocabulary";
