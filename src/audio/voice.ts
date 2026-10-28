@@ -15,6 +15,7 @@
  * described. That keeps the registry testable without a browser.
  */
 import { PROJECT_NAME } from "../config/constants";
+import type { InstrumentMode } from "../types";
 
 /** Coarse grouping, used to sort and label the instrument picker. */
 export type VoiceKind = "oscillator" | "wavetable" | "sampler";
@@ -102,6 +103,15 @@ export interface VoiceDefinition {
   readonly label: string;
   readonly kind: VoiceKind;
   /**
+   * Which instrument modes this voice can play.
+   *
+   * Absent means both, which is right for every voice that exists today: an
+   * oscillator bank or a sampler accepts a one-element frequency list as
+   * happily as a chord. It exists because a drum kit will not — a kit has no
+   * pitch to play, so it belongs to a mode the chord picker must not offer.
+   */
+  readonly modes?: readonly InstrumentMode[];
+  /**
    * Builds a fresh voice. Called on every instrument change, so a voice instance
    * belongs to exactly one active run.
    *
@@ -134,6 +144,28 @@ export function registerVoice(definition: VoiceDefinition): void {
 /** Every registered voice, in registration order. */
 export function listVoices(): readonly VoiceDefinition[] {
   return Array.from(registry.values());
+}
+
+/**
+ * Whether a voice can play in a mode.
+ *
+ * A definition that says nothing can play anything: silence here means "no
+ * restriction", not "no modes", so an instrument registered before modes
+ * existed keeps working.
+ */
+export function voiceSupportsMode(definition: VoiceDefinition, mode: InstrumentMode): boolean {
+  return definition.modes === undefined || definition.modes.includes(mode);
+}
+
+/**
+ * Every registered voice that can play in `mode`, in registration order.
+ *
+ * The picker is built from this rather than from {@link listVoices}, so an
+ * instrument that cannot play the current mode is not offered at all — an
+ * instrument that plays nothing is worse than one that is missing.
+ */
+export function listVoicesFor(mode: InstrumentMode): readonly VoiceDefinition[] {
+  return listVoices().filter((voice) => voiceSupportsMode(voice, mode));
 }
 
 /** Looks up a voice by id, or `undefined` when nothing is registered under it. */

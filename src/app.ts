@@ -13,7 +13,7 @@ import { SynthEngine } from "./audio/synth-engine";
 import { Transport } from "./audio/transport";
 import type { ArmUnit } from "./audio/transport";
 import { defineUserSample, defineUserWavetable } from "./audio/user-voices";
-import { listVoices, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
+import { listVoicesFor, registerVoice, VOICE_KIND_LABELS } from "./audio/voice";
 import type { VoiceDefinition, VoiceKind } from "./audio/voice";
 import { DEFAULT_VOICE_ID } from "./audio/voices";
 import {
@@ -634,7 +634,11 @@ export class GestureSynthApp {
 
     select.replaceChildren();
 
-    for (const voice of listVoices()) {
+    // Only what can play the mode in force. Today that is every voice, because
+    // an oscillator bank and a sampler both take a one-element frequency list
+    // as happily as a chord — but a drum kit will not, and a kit offered in
+    // chord mode is an instrument that plays nothing.
+    for (const voice of listVoicesFor(this.mode)) {
       let group = groups.get(voice.kind);
       if (!group) {
         group = document.createElement("optgroup");
@@ -953,6 +957,17 @@ export class GestureSynthApp {
     this.hud.setMode(mode);
     remember(MODE_STORAGE_KEY, mode);
     this.applyModeVisibility();
+
+    // The picker is per-mode, so it is rebuilt here rather than only at startup.
+    // If the instrument in play cannot play the new mode it is swapped for one
+    // that can, because the alternative is a picker whose own value is not in
+    // its list.
+    const current = this.els.instrumentSelect.value;
+    const stillPlayable = listVoicesFor(mode).some((voice) => voice.id === current);
+
+    this.renderInstruments(stillPlayable ? current : DEFAULT_VOICE_ID);
+
+    if (!stillPlayable) this.synth.setInstrument(this.els.instrumentSelect.value);
 
     // Both modes share one sounding voice, so hand it over cleanly: silence
     // whatever is playing and forget the notes each reader was holding.
