@@ -54,8 +54,10 @@ import type { ResolvedEvent } from "./music/take";
 import {
   parseTakeDocument,
   serializeTakeDocument,
+  takeAudioFilename,
   takeDocumentFilename,
 } from "./music/take-document";
+import { renderTakeToWav } from "./audio/render";
 import { getSolidNotes, getVoicingLabel } from "./music/voicings";
 import type {
   CanvasPoint,
@@ -141,6 +143,9 @@ const NUMERALS_SET: readonly ChordNumeral[] = ["I", "II", "III", "IV", "V", "VI"
  * a player does with a loop.
  */
 const EXPORT_TAKE_ID = "export-take";
+
+/** The id of the "render the loop to a file" entry, beside it. */
+const RENDER_WAV_ID = "render-wav";
 
 /**
  * The Layers menu, once a layer is in hand.
@@ -493,6 +498,8 @@ export class GestureSynthApp {
 
     this.els.exportTakeButton.addEventListener("click", () => this.exportTake());
 
+    this.els.renderWavButton.addEventListener("click", () => void this.exportTakeWav());
+
     this.els.importTakeButton.addEventListener("click", () => this.els.takeFile.click());
 
     this.els.takeFile.addEventListener("change", () => {
@@ -539,6 +546,46 @@ export class GestureSynthApp {
       new Blob([text], { type: "application/json" }),
       takeDocumentFilename(new Date(), this.transport.loopBeats),
     );
+  }
+
+  /**
+   * Renders the loop to a WAV, offline.
+   *
+   * Faster than real time and independent of the tab being focused, which is the
+   * point: the file does not depend on the machine keeping up, and it is the
+   * same renderer #12's audio path will call.
+   *
+   * The layers are resolved against the *current* tonic, so the file transposes
+   * with the key exactly as playback does.
+   */
+  private async exportTakeWav(): Promise<void> {
+    const voiceId = this.els.instrumentSelect.value;
+
+    const layers = this.looper.tracks.flatMap((track) =>
+      track.take === null ? [] : [{ take: track.take, gain: track.gain, voiceId }],
+    );
+
+    if (layers.length === 0) {
+      this.flashTransport("Nothing recorded to render");
+      return;
+    }
+
+    this.flashTransport("Rendering…");
+
+    try {
+      const wav = await renderTakeToWav({
+        layers,
+        bpm: this.transport.tempo,
+        loopBeats: this.transport.loopBeats,
+        tonicFrequency: this.tonicFrequency,
+      });
+
+      downloadBlob(wav, takeAudioFilename(new Date(), this.transport.loopBeats));
+      this.flashTransport("Rendered");
+    } catch (error) {
+      this.flashTransport("Could not render the loop");
+      console.warn(`${PROJECT_NAME}: could not render the take`, error);
+    }
   }
 
   /**
@@ -1754,6 +1801,7 @@ export class GestureSynthApp {
           { id: "stop", label: "Stop" },
           { id: "clear", label: "Clear" },
           { id: EXPORT_TAKE_ID, label: "Save take" },
+          { id: RENDER_WAV_ID, label: "Save WAV" },
         ],
         activeId: this.looper.state,
       };
@@ -1981,6 +2029,9 @@ export class GestureSynthApp {
           return;
         case EXPORT_TAKE_ID:
           this.exportTake();
+          return;
+        case RENDER_WAV_ID:
+          void this.exportTakeWav();
           return;
       }
       return;

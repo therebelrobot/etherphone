@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TakeDocumentTrack } from "./take-document";
 import {
   parseTakeDocument,
+  takeAudioFilename,
   serializeTakeDocument,
   takeDocumentFilename,
   TAKE_DOCUMENT_FORMAT,
@@ -208,6 +209,12 @@ describe("takeDocumentFilename", () => {
   it("dates the file and says how long the loop is", () => {
     expect(takeDocumentFilename(new Date("2026-10-28T12:00:00Z"), 32)).toBe(
       "etherphone-take-2026-10-28-32beats.json",
+    );
+  });
+
+  it("names the rendered audio the same way, so the pair sort together", () => {
+    expect(takeAudioFilename(new Date("2026-10-28T12:00:00Z"), 32)).toBe(
+      "etherphone-take-2026-10-28-32beats.wav",
     );
   });
 });

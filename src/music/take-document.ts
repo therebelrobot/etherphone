@@ -91,6 +91,12 @@ export function takeDocumentFilename(date = new Date(), loopBeats = 16): string 
   return `etherphone-take-${stamp}-${loopBeats}beats.json`;
 }
 
+/** The same naming, for the rendered audio of a take. */
+export function takeAudioFilename(date = new Date(), loopBeats = 16): string {
+  const stamp = date.toISOString().slice(0, 10);
+  return `etherphone-take-${stamp}-${loopBeats}beats.wav`;
+}
+
 /**
  * Reads a performance back, or explains why it cannot.
  *

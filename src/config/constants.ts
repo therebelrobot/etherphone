@@ -298,6 +298,16 @@ export const AUDIO = {
   /** How long past the decay a plucked oscillator is stopped, in seconds. */
   pluckStopPaddingSeconds: 0.02,
 
+  /**
+   * An offline render: sample rate, and how much room to leave after the loop.
+   *
+   * The tail exists because a plucked note decays past the last event, and a
+   * render that stops exactly on the loop's end clips it — an audible click at
+   * the seam of a file someone is going to play on a loop.
+   */
+  renderSampleRate: 44100,
+  renderTailSeconds: 1.5,
+
   /** Ramp from silence when a sampled note starts, in seconds. */
   samplerAttackSeconds: 0.008,
   /** Ramp to silence when a sampled note stops, in seconds. */

@@ -38,6 +38,7 @@ export interface AppElements {
   readonly takeControls: HTMLElement;
   readonly exportTakeButton: HTMLButtonElement;
   readonly importTakeButton: HTMLButtonElement;
+  readonly renderWavButton: HTMLButtonElement;
   readonly takeFile: HTMLInputElement;
   readonly helpButton: HTMLButtonElement;
   readonly helpModal: HTMLElement;
@@ -96,6 +97,7 @@ export function getAppElements(): AppElements {
     takeControls: requireElement("#takeControls"),
     exportTakeButton: requireElement<HTMLButtonElement>("#exportTakeButton"),
     importTakeButton: requireElement<HTMLButtonElement>("#importTakeButton"),
+    renderWavButton: requireElement<HTMLButtonElement>("#renderWavButton"),
     takeFile: requireElement<HTMLInputElement>("#takeFile"),
     helpButton: requireElement<HTMLButtonElement>("#helpButton"),
     helpModal: requireElement("#helpModal"),
