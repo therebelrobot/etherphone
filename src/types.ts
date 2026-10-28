@@ -128,6 +128,18 @@ export interface ChordTones {
   readonly dom7Tone: number;
   readonly dim7Tone: number;
   readonly dim5Tone: number;
+  /**
+   * The intervals a *quality* needs and a scale degree does not.
+   *
+   * A quality like sus2 replaces the third with the second, and add9 puts a ninth
+   * above a full triad — neither is expressible from third/fifth/7ths alone. They
+   * are derived here, next to the others, so that a quality is a selection of
+   * tones rather than arithmetic of its own. See `music/qualities.ts`.
+   */
+  readonly second: number;
+  readonly fourth: number;
+  readonly sixth: number;
+  readonly ninth: number;
 }
 
 /**

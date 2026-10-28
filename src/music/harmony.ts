@@ -84,6 +84,10 @@ export function getChordTones(
   const dom7Semitones = 10;
   const dim7Semitones = 9;
   const dim5Semitones = 6;
+  const secondSemitones = 2;
+  const fourthSemitones = 5;
+  const sixthSemitones = 9;
+  const ninthSemitones = 14;
 
   const third = root * semitoneRatio(thirdSemitones);
   const fifth = root * semitoneRatio(fifthSemitones);
@@ -98,5 +102,9 @@ export function getChordTones(
     dom7Tone: root * semitoneRatio(dom7Semitones),
     dim7Tone: root * semitoneRatio(dim7Semitones),
     dim5Tone: root * semitoneRatio(dim5Semitones),
+    second: root * semitoneRatio(secondSemitones),
+    fourth: root * semitoneRatio(fourthSemitones),
+    sixth: root * semitoneRatio(sixthSemitones),
+    ninth: root * semitoneRatio(ninthSemitones),
   };
 }
