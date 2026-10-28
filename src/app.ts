@@ -57,7 +57,7 @@ import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
-import { startCamera } from "./vision/camera";
+import { startCamera, describeCameraError, hasSecureContext } from "./vision/camera";
 import {
   classifyChord,
   getHandCenter,
@@ -208,6 +208,14 @@ export class GestureSynthApp {
   private readonly menu = new MenuController();
 
   /**
+   * The start gate, kept so a camera failure can be explained in it.
+   *
+   * Assigned by {@link wireOverlays}, which `start` calls before the camera is
+   * requested.
+   */
+  private startOverlay!: StartOverlay;
+
+  /**
    * The fast transport: one fist, flicked in a direction.
    *
    * One reader per hand, because with both hands closed either may be the one
@@ -281,7 +289,7 @@ export class GestureSynthApp {
     this.refreshHelp();
     this.setInstrument(this.els.instrumentSelect.value);
 
-    await startCamera(this.els.video);
+    await this.startCameraOrExplain();
     resizeCanvasToWindow(this.els.canvas);
     window.addEventListener("resize", () => resizeCanvasToWindow(this.els.canvas));
 
@@ -289,9 +297,28 @@ export class GestureSynthApp {
     this.runLoop(handLandmarker);
   }
 
+  /**
+   * Brings up the camera, or stops and says why.
+   *
+   * Without this the failure is a console line and a dimmed screen: on a page
+   * served over plain HTTP the camera is refused with no error a player can
+   * see, and the instrument looks broken rather than misconfigured.
+   */
+  private async startCameraOrExplain(): Promise<void> {
+    try {
+      await startCamera(this.els.video);
+    } catch (error) {
+      console.error(error);
+      this.startOverlay.showError(describeCameraError(error, hasSecureContext()));
+      throw error;
+    }
+  }
+
   /** Constructs the components that own their own event handling. */
   private wireOverlays(): void {
-    new StartOverlay(this.els.startOverlay, this.els.canvas, () => this.startAudio());
+    this.startOverlay = new StartOverlay(this.els.startOverlay, this.els.canvas, () =>
+      this.startAudio(),
+    );
   }
 
   /**

@@ -73,6 +73,29 @@ body {
   text-align: center;
 }
 
+/*
+ * A camera failure. The overlay stays put — there is nothing to start — so the
+ * reason has to read comfortably rather than like a prompt, and the click
+ * affordance is withdrawn so it does not invite one that does nothing.
+ */
+#startOverlay.failed {
+  background: rgba(48, 6, 6, 0.78);
+  cursor: default;
+}
+
+#startOverlay.failed .start-circle {
+  background: #ff5f5f;
+  color: #fff;
+  font-weight: 700;
+}
+
+#startOverlay.failed .start-text {
+  max-width: 34rem;
+  padding: 0 1.5rem;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+}
+
 /* ---- Controls ---- */
 
 /* The one utility that must always win. A control that lays itself out — the
