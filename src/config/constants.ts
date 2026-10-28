@@ -183,8 +183,18 @@ export const CONTROL = {
   listStaggerMs: 22,
   /** How wide a list row is drawn, before it is capped to the canvas. */
   listRowWidth: 380,
-  /** How long the menu stays open with the cursor off every option (ms). */
-  idleTimeoutMs: 5000,
+  /**
+   * How long the menu stays open once the player has let the engage gesture go
+   * *and* is pointing at no option (ms).
+   *
+   * Holding the gesture keeps the menu open for as long as it is held — see
+   * `MenuController` — so this is not a reading time limit, it is the window for
+   * a player who has stepped out of the menu's posture without having finished
+   * with it. It is deliberately generous: the only cost of waiting is a menu the
+   * player can dismiss on purpose, in one movement, with the hint that is drawn
+   * on it, whereas cutting a reader off mid-list is a genuine failure.
+   */
+  idleTimeoutMs: 10000,
   /** Distance from the menu's centre to an option, in canvas pixels. */
   radius: 190,
   /** Inside this, the cursor selects nothing, so the centre is a neutral spot. */

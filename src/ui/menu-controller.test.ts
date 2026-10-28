@@ -300,16 +300,56 @@ describe("MenuController choosing", () => {
     expect(update.isOpen).toBe(true);
   });
 
-  it("closes itself after idling with neither hand on anything", () => {
+  it("stays open while the hands hold the gesture that opened it", () => {
+    // Reading the menu is done in the menu's own posture: both hands closed and
+    // still, which is neither pointing at an option nor leaving the menu. A
+    // timeout that only counted *pointing* counted reading as idling, so the menu
+    // closed under a reader part-way through the list — and it closed into the
+    // transport's fist, because closed hands are the fast transport's shape, so
+    // losing the menu looked like the menu turning into a different gesture.
     const controller = makeController();
     const opened = openMenu(controller);
 
-    expect(
-      controller.update(
-        input({ bothClosed: true, menuCursor: LEFT, optionCursor: RIGHT }),
-        opened + IDLE + 1,
-      ).isOpen,
-    ).toBe(false);
+    const update = controller.update(
+      input({ bothClosed: true, menuCursor: LEFT, optionCursor: RIGHT }),
+      opened + IDLE * 5,
+    );
+
+    expect(update.isOpen).toBe(true);
+  });
+
+  it("closes once the gesture is let go and nothing is being pointed at", () => {
+    // The one state that really is idle: out of the menu's posture, pointing at
+    // nothing. That is when the timeout has a job — handing the instrument back —
+    // and it is the window the constant is named for.
+    const controller = makeController();
+    const opened = openMenu(controller);
+
+    const released = controller.update(
+      input({ bothClosed: false, menuCursor: LEFT, optionCursor: RIGHT }),
+      opened + 1,
+    );
+    expect(released.isOpen).toBe(true);
+
+    const idled = controller.update(
+      input({ bothClosed: false, menuCursor: LEFT, optionCursor: RIGHT }),
+      opened + IDLE + 2,
+    );
+    expect(idled.isOpen).toBe(false);
+  });
+
+  it("stays open while a released hand is still pointing at an option", () => {
+    const controller = makeController();
+    const opened = openMenu(controller);
+    const pointing = pointFrom(LEFT, 1, MENU_TOPICS.length);
+
+    const update = controller.update(
+      input({ bothClosed: false, menuCursor: pointing, optionCursor: RIGHT }),
+      opened + IDLE * 3,
+    );
+
+    expect(update.menus.hoveredId).toBe(MENU_TOPICS[1].id);
+    expect(update.isOpen).toBe(true);
   });
 });
 

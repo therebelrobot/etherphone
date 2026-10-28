@@ -467,7 +467,20 @@ a mouse mid-performance — and each feature added since has added another one. 
   and rounds off on arrival, and each overshoots its resting spot slightly before
   springing back. The whole fan-out is over well inside `dwellMs`, so it can never eat
   into the time the player has to choose.
-- **Idling times it out** after a few seconds with the hand off every option.
+- **Holding the gesture keeps it open.** Reading the menu is done in the menu's own
+  posture — both hands closed and still — so holding that hold is what says _I am still
+  in here_, and the menu waits as long as it is held. Nothing about reading is a race:
+  the first version refreshed its clock only when something was _pointed at_, which made
+  reading — which points at nothing — count as idling, and the menu closed under anyone
+  part-way through a list.
+- **Idling out means the narrow thing**: the gesture has been let go _and_ nothing is
+  pointed at, which is the state in which the player has stepped out of the menu and
+  wants the instrument back. `idleTimeoutMs` is deliberately generous, because the cost
+  of waiting is a menu the player can dismiss on purpose with the hint drawn on it, and
+  the cost of cutting a reader off is the failure above. Note what it closes _into_:
+  the hands are still closed, and closed hands are also the transport's fist, so losing
+  the menu used to put a flick cue on screen a beat later, as if the menu had turned
+  into a different gesture.
 
 The anchor is nudged back on screen when the hand is near an edge, so an option is never
 off-screen — where it could still be selected by direction but could not be seen.

@@ -380,8 +380,24 @@ export class MenuController {
       !staged || this.stage === "options",
     );
 
-    // Pointing at anything keeps the menu alive; only idling times it out.
-    if (menuRead.frame.hoveredId || optionRead.frame.hoveredId) {
+    // Pointing at anything keeps the menu alive, and so does **still holding the
+    // gesture that opened it**.
+    //
+    // The second half matters more than it looks. The menu's posture is both hands
+    // closed, and reading it is done in exactly that posture — closed and still,
+    // which is neither pointing at an option nor walking away from the menu. So a
+    // timeout that only counted *pointing* counted reading as idling, and the menu
+    // closed under a player part-way through the list.
+    //
+    // What it closed *into* was worse than losing the menu: the hands were still
+    // closed, and closed hands are the fast transport's fist, so the next thing on
+    // screen was a flick cue. A menu vanishing mid-read therefore looked like the
+    // menu had turned into a different gesture.
+    //
+    // Refreshing on the hold leaves the timeout doing the one job it is good for:
+    // the player has let the gesture go and is pointing at nothing, which is the
+    // only state that really is idle.
+    if (menuRead.frame.hoveredId || optionRead.frame.hoveredId || input.bothClosed) {
       this.idleSince = now;
     }
 
