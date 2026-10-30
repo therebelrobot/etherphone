@@ -77,8 +77,14 @@ export type Waveform = "triangle" | "sawtooth" | "square";
 export interface ChordState {
   readonly chord: ChordNumeral;
   readonly isMajorMode: boolean;
-  readonly qualityIndex: number;
-  readonly thumbDown: boolean;
+  /**
+   * Which kind of chord to sound: an id from the quality catalogue.
+   *
+   * `null` means the expression hand's pose is not in its map, which is how the
+   * instrument falls silent — the closed hand is simply a pose nothing is mapped
+   * to, rather than a special case.
+   */
+  readonly quality: string | null;
 }
 
 /**
@@ -163,13 +169,13 @@ interface TakeEventBase {
   readonly tilt: number;
 }
 
-/** A chord the left hand was holding. */
+/** A chord the chord hand was holding. */
 export interface ChordTakeEvent extends TakeEventBase {
   readonly kind: "chord";
   readonly numeral: ChordNumeral;
   readonly isMajorMode: boolean;
-  readonly qualityIndex: number;
-  readonly thumbDown: boolean;
+  /** The quality id that was in force, so a take replays the kinds it was played with. */
+  readonly quality: string;
 }
 
 /** A single note, from the mono voice. */

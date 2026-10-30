@@ -6,16 +6,14 @@ const I_CHORD: RecordedIntent = {
   kind: "chord",
   numeral: "I",
   isMajorMode: true,
-  qualityIndex: 1,
-  thumbDown: false,
+  quality: "octave",
 };
 
 const V_CHORD: RecordedIntent = {
   kind: "chord",
   numeral: "V",
   isMajorMode: true,
-  qualityIndex: 1,
-  thumbDown: false,
+  quality: "octave",
 };
 
 const C_NOTE: RecordedIntent = { kind: "note", degree: 1 };

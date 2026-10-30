@@ -231,8 +231,9 @@ src/
                            the numeral shift the modifier uses.
     stabilizer.ts          Holding a reading before committing to it. The chord
                            path and the gesture menu both use DwellStabilizer.
-    voicings.ts            The four right-hand voicings per mode, each with a label
-                           and a note selector, so readout and audio cannot drift.
+    qualities.ts           The kinds of chord, each with a label and a tone selector,
+                           so the readout and the audio cannot drift apart.
+    expression-map.ts      Which hand pose plays which kind, per hand.
 
   media.ts                 Permission failures for the camera and the microphone, shared
                            so the two cannot drift into inconsistent wording.
@@ -326,12 +327,22 @@ whose left hand cannot form the shapes is not locked out of the instrument.
 
 **Expression hand — voicing and expression**
 
-| Input                 | Result                                          |
-| --------------------- | ----------------------------------------------- |
-| 1–4 fingers           | Root position, 1st inversion, 7th, dominant/dim |
-| Thumb in / out        | Drop the octave (voicing, or the whole line)    |
-| Tilt inward / outward | Close the filter / open it                      |
-| Height                | Louder the higher the hand                      |
+| Input                 | Result                                         |
+| --------------------- | ---------------------------------------------- |
+| 1–4 fingers (Chords)  | Octave, 1st inversion, add 7, 7th — unchanged  |
+| the same, thumb out   | Sus 2, sus 4, add 9, add 7+9 — the second bank |
+| Thumb in / out (Mono) | Drop the octave                                |
+| Tilt inward / outward | Close the filter / open it                     |
+| Height                | Louder the higher the hand                     |
+
+**The expression hand's pose chooses the kind of chord**, from its own map. It is a
+map rather than a setting on the chord hand's, because it answers a different
+question — the chord hand says _which_ chord, this says _what kind_ — and the two
+are read from different hands. That is what made the exotic kinds reachable: four
+finger counts give four kinds, and posing the **whole hand shape including the
+thumb** doubles it to eight. The cost is that the thumb can no longer drop an octave
+in Chords mode, because it cannot be a pose and a modifier at once. Mono keeps it,
+which is where it mattered; see [RFC #19](https://github.com/therebelrobot/etherphone/issues/19).
 
 The chord hand feeds `ChordStabilizer`, which requires a new chord to hold for 100ms
 before it is committed and tolerates a 50ms dropout. That is why the instrument does
@@ -761,7 +772,7 @@ the same way.
 - **A new instrument:** implement `Voice` — or reuse `OscillatorBank` — and register a `VoiceDefinition` in `src/audio/voices/index.ts`. It shows up in the picker; nothing else changes.
 - **A new wavetable:** add an entry to `WAVETABLE_PRESETS` in `src/audio/wavetable.ts`.
 - **A new sample:** drop a `.wav` into `public/samples/` and add it to `BUNDLED_SAMPLES` in `src/audio/sampler.ts`.
-- **A new voicing:** add one entry to `MAJOR_VOICINGS` or `MINOR_VOICINGS` in `src/music/voicings.ts`. The label and the notes come from the same object.
+- **A new chord kind:** add one entry to `QUALITIES` in `src/music/qualities.ts`, then give it a pose in `src/music/expression-map.ts`. The label and the notes come from the same object, which is what stops the readout describing a chord the audio is not playing.
 - **A new key:** add its tonic frequency to the `<select id="keySelect">` in `index.html` and its scale to `MAJOR_SCALE` in `src/config/music.ts`.
 - **A new synth stage:** insert it into the shared chain in `SynthEngine.ensureContext()`; the graph order is documented there.
 - **A new gesture:** add a pure function to `src/vision/gestures.ts` and cover it in `gestures.test.ts`.

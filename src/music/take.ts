@@ -11,7 +11,7 @@
 import type { Take, TakeEvent } from "../types";
 import { getChordTones } from "./harmony";
 import { frequencyForDegree } from "./mono";
-import { getSolidNotes } from "./voicings";
+import { getQualityNotes } from "./qualities";
 
 /** Frequencies and expression to drive the loop layer with. */
 export interface ResolvedEvent {
@@ -41,12 +41,12 @@ export function resolveTakeEvent(event: TakeEvent, tonicFrequency: number): Reso
 
     case "chord": {
       const tones = getChordTones(event.numeral, event.isMajorMode, tonicFrequency);
-      let notes = getSolidNotes(tones, event.qualityIndex, event.isMajorMode);
 
-      // The thumb drops the voicing an octave, exactly as it does live.
-      if (event.thumbDown) notes = notes.map((freq) => freq / 2);
-
-      return { notes, volume: event.volume, tilt: event.tilt };
+      return {
+        notes: getQualityNotes(tones, event.quality, event.isMajorMode),
+        volume: event.volume,
+        tilt: event.tilt,
+      };
     }
   }
 }
@@ -86,12 +86,7 @@ export function sameIntent(a: TakeEvent, b: TakeEvent): boolean {
   if (a.kind !== b.kind) return false;
 
   if (a.kind === "chord" && b.kind === "chord") {
-    return (
-      a.numeral === b.numeral &&
-      a.isMajorMode === b.isMajorMode &&
-      a.qualityIndex === b.qualityIndex &&
-      a.thumbDown === b.thumbDown
-    );
+    return a.numeral === b.numeral && a.isMajorMode === b.isMajorMode && a.quality === b.quality;
   }
 
   if (a.kind === "note" && b.kind === "note") {

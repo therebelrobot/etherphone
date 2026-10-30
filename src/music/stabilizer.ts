@@ -81,12 +81,7 @@ function sameChordState(a: ChordState | null, b: ChordState | null): boolean {
   if (a === null && b === null) return true;
   if (a === null || b === null) return false;
 
-  return (
-    a.chord === b.chord &&
-    a.isMajorMode === b.isMajorMode &&
-    a.qualityIndex === b.qualityIndex &&
-    a.thumbDown === b.thumbDown
-  );
+  return a.chord === b.chord && a.isMajorMode === b.isMajorMode && a.quality === b.quality;
 }
 
 /**

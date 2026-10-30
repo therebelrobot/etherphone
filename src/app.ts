@@ -75,7 +75,9 @@ import { renderTakeToWav } from "./audio/render";
 import { canRequestMicrophone, startMicrophone } from "./audio/microphone";
 import { recordVoiceLoop as captureVoiceBuffer } from "./audio/voice-capture";
 import { isSilentCapture, loopFrameCount } from "./audio/voice-loop";
-import { getSolidNotes, getVoicingLabel } from "./music/voicings";
+import { getQualityLabel, getQualityNotes } from "./music/qualities";
+import { DEFAULT_EXPRESSION_MAP, qualityForPose } from "./music/expression-map";
+import type { ExpressionMap } from "./music/expression-map";
 import type {
   CanvasPoint,
   ChordNumeral,
@@ -153,6 +155,21 @@ const HARMONY_HAND_ID = "harmony-hand";
 
 /** The id of the entry that steps the glide's snap strength. */
 const SNAP_STRENGTH_ID = "snap-strength";
+
+/**
+ * The frequencies a committed state sounds.
+ *
+ * One place, because both the audio and the ribbon ask the same question: the
+ * live path plays these, and the drawing counts them. Two answers would be two
+ * things to keep in step.
+ */
+function notesFor(state: ChordState, tonicFrequency: number): number[] {
+  return getQualityNotes(
+    getChordTones(state.chord, state.isMajorMode, tonicFrequency),
+    state.quality,
+    state.isMajorMode,
+  );
+}
 
 /** The id of the entry that turns re-articulation on or off. */
 const REARTICULATE_ID = "rearticulate";
@@ -1484,28 +1501,27 @@ export class GestureSynthApp {
     const state = this.stabilizer.update(this.readIntent(Left, Right), now);
 
     const isMajorMode = state?.isMajorMode ?? true;
-    const qualityIndex = state?.qualityIndex ?? 0;
-    const thumbDown = state?.thumbDown ?? false;
     const chord = state?.chord ?? null;
+    const quality = state?.quality ?? null;
 
     this.hud.setChord(getChordDisplayName(chord, isMajorMode, this.keyName), chord);
     this.hud.setQuality(
-      // An armed shift outranks the voicing label: it is the thing about to
-      // change, and the voicing is not.
+      // An armed shift outranks the kind label: it is the thing about to change,
+      // and the kind is not.
       this.modifier.armed > 0
         ? `Modifier +${this.modifier.armed}`
-        : getVoicingLabel(isMajorMode, qualityIndex),
-      thumbDown,
+        : quality
+          ? getQualityLabel(quality)
+          : undefined,
     );
 
     this.looper.capture(
-      state && state.qualityIndex >= 1
+      state && quality !== null
         ? {
             kind: "chord",
             numeral: state.chord,
             isMajorMode: state.isMajorMode,
-            qualityIndex: state.qualityIndex,
-            thumbDown: state.thumbDown,
+            quality,
           }
         : null,
       volume,
@@ -1517,7 +1533,16 @@ export class GestureSynthApp {
       this.updateVoices(state, volume);
     }
 
-    drawEnergy(this.els.ctx, volume, qualityIndex, tilt, chord);
+    // One ribbon line per note the kind sounds, so the drawing follows the same
+    // thing the ear does: a four-note kind is busier than a three-note one, and a
+    // pose the map does not name draws nothing at all.
+    drawEnergy(
+      this.els.ctx,
+      volume,
+      state ? notesFor(state, this.tonicFrequency).length : 0,
+      tilt,
+      chord,
+    );
   }
 
   /**
@@ -1700,7 +1725,7 @@ export class GestureSynthApp {
     if (!reading) {
       this.synth.stop();
       this.hud.setNote("--");
-      this.hud.setQuality(this.monoStyleLabel, false);
+      this.hud.setQuality(this.monoStyleLabel);
       drawEnergy(this.els.ctx, 0, 0, tilt, null);
       return;
     }
@@ -1734,7 +1759,7 @@ export class GestureSynthApp {
     this.synth.setVolume(volume);
 
     this.hud.setNote(monoNoteLabel(reading, this.keyName));
-    this.hud.setQuality(this.monoStyleLabel, false);
+    this.hud.setQuality(this.monoStyleLabel);
     // One ribbon line, coloured by the degree the note sits on.
     drawEnergy(this.els.ctx, volume, 1, tilt, monoNumeral(reading));
   }
@@ -1914,7 +1939,6 @@ export class GestureSynthApp {
     this.hud.setNote(this.menuTitle(update.menus));
     this.hud.setQuality(
       update.options.hoveredId === null ? "Control" : this.labelFor(update.options),
-      false,
     );
 
     return true;
@@ -2392,6 +2416,16 @@ export class GestureSynthApp {
   private harmonyHand: Handedness = "Left";
 
   /**
+   * The expression hand's vocabulary: which pose plays which kind of chord.
+   *
+   * A second map rather than a setting on the first, because it answers a
+   * different question — the chord hand's map says *which* chord, this says *what
+   * kind* — and the two are read from different hands. Editable in the same way
+   * once the editor can choose a hand (RFC #19, stage b).
+   */
+  private readonly expressionMap: ExpressionMap = DEFAULT_EXPRESSION_MAP;
+
+  /**
    * Transpositions armed by the map's modifier shape, waiting for a chord.
    *
    * The state machine lives in `ModifierArmer` so that "an arm is a visit, not a
@@ -2451,20 +2485,12 @@ export class GestureSynthApp {
 
   /** Sends the current intent to the synth, or silences it. */
   private updateVoices(state: ChordState | null, volume: number): void {
-    if (!state || state.qualityIndex < 1) {
+    if (!state || state.quality === null) {
       this.synth.setVolume(0);
       return;
     }
 
-    const tones = getChordTones(state.chord, state.isMajorMode, this.tonicFrequency);
-    let notes = getSolidNotes(tones, state.qualityIndex, state.isMajorMode);
-
-    // Thumb in drops the whole voicing an octave.
-    if (state.thumbDown) {
-      notes = notes.map((freq) => freq / 2);
-    }
-
-    this.synth.playNotes(notes);
+    this.synth.playNotes(notesFor(state, this.tonicFrequency));
     this.synth.setVolume(volume);
   }
 
@@ -2477,8 +2503,7 @@ export class GestureSynthApp {
 
     let chord: ChordNumeral | null = null;
     let isMajorMode = true;
-    let qualityIndex = 0;
-    let thumbDown = false;
+    let quality: string | null = null;
 
     // The chord hand chooses the chord and, via tilt, the mode. Which side that
     // is comes from the setting, and the handedness is passed through because
@@ -2503,14 +2528,20 @@ export class GestureSynthApp {
       this.modifier.read(null, null, this.gestureMap.transposeShape);
     }
 
-    // The expression hand chooses the voicing and whether it drops an octave.
+    // The expression hand chooses the *kind* of chord, by pose, from its own map.
+    // The pose is the whole hand shape — thumb included — because four counts give
+    // four kinds and the thumb doubles the bank to eight. That is also why the
+    // thumb no longer drops an octave in this mode: it cannot be a pose and a
+    // modifier at once, and a pose buys more.
     if (expressionLandmarks) {
-      qualityIndex = getRightHandQualityIndex(expressionLandmarks);
-      thumbDown = isThumbExtended(expressionLandmarks, expressionHand);
+      quality = qualityForPose(
+        this.expressionMap,
+        readHandShape(expressionLandmarks, expressionHand),
+      );
     }
 
     if (!chord) return null;
 
-    return { chord, isMajorMode, qualityIndex, thumbDown };
+    return { chord, isMajorMode, quality };
   }
 }

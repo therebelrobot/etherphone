@@ -13,8 +13,7 @@ const chord = (overrides: Partial<Extract<TakeEvent, { kind: "chord" }>> = {}) =
     tilt: 0,
     numeral: "I",
     isMajorMode: true,
-    qualityIndex: 1,
-    thumbDown: false,
+    quality: "octave",
     ...overrides,
   }) as TakeEvent;
 
@@ -33,11 +32,18 @@ describe("resolveTakeEvent", () => {
     expect(inD.notes[0] / inC.notes[0]).toBeCloseTo(Math.pow(2, 2 / 12), 5);
   });
 
-  it("drops a chord an octave when the thumb was in", () => {
-    const up = resolveTakeEvent(chord({ thumbDown: false }), C4);
-    const down = resolveTakeEvent(chord({ thumbDown: true }), C4);
+  it("replays the kind of chord it was played with", () => {
+    // The take stores the quality id, so a recorded sus4 comes back a sus4. The
+    // instrument used to store a finger count and rebuild the kind from it, which
+    // could not survive a map edit: the same count would mean something else.
+    const sus = resolveTakeEvent(chord({ quality: "sus4" }), C4);
+    const octave = resolveTakeEvent(chord({ quality: "octave" }), C4);
 
-    expect(down.notes[0]).toBeCloseTo(up.notes[0] / 2, 5);
+    expect(sus.notes).not.toEqual(octave.notes);
+    // A suspended fourth has no third, which is what makes it suspended.
+    expect(sus.notes).toHaveLength(4);
+    expect(octave.notes).toHaveLength(4);
+    expect(sus.notes[1]).toBeCloseTo(C4 * Math.pow(2, 5 / 12), 5);
   });
 
   it("sounds a mono degree at that degree's frequency", () => {
@@ -67,7 +73,7 @@ describe("sameIntent", () => {
   it("tells two different chords apart", () => {
     expect(sameIntent(chord({ numeral: "I" }), chord({ numeral: "V" }))).toBe(false);
     expect(sameIntent(chord({ isMajorMode: true }), chord({ isMajorMode: false }))).toBe(false);
-    expect(sameIntent(chord({ qualityIndex: 1 }), chord({ qualityIndex: 3 }))).toBe(false);
+    expect(sameIntent(chord({ quality: "octave" }), chord({ quality: "add7" }))).toBe(false);
   });
 
   it("tells two different notes apart, and notes from chords", () => {
@@ -88,8 +94,7 @@ describe("mergeTakes", () => {
     tilt: 0,
     numeral,
     isMajorMode: true,
-    qualityIndex: 1,
-    thumbDown: false,
+    quality: "octave",
   });
 
   const base = { bpm: 100, loopBeats: 8, events: [chord(0, "I"), chord(4, "V")] };

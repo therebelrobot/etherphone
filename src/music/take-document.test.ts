@@ -25,8 +25,7 @@ const TRACKS: readonly TakeDocumentTrack[] = [
           tilt: 0,
           numeral: "I",
           isMajorMode: true,
-          qualityIndex: 0,
-          thumbDown: false,
+          quality: "octave",
         },
         { kind: "rest", beat: 4, volume: 0, tilt: 0 },
         {
@@ -36,8 +35,7 @@ const TRACKS: readonly TakeDocumentTrack[] = [
           tilt: 0.2,
           numeral: "IV",
           isMajorMode: true,
-          qualityIndex: 1,
-          thumbDown: true,
+          quality: "octave",
         },
       ],
     },
@@ -135,7 +133,7 @@ describe("parseTakeDocument", () => {
   });
 
   it("rejects a version it does not understand rather than guessing", () => {
-    const text = written().replace('"version": 1', '"version": 99');
+    const text = written().replace(`"version": ${TAKE_DOCUMENT_VERSION}`, '"version": 99');
     expect(() => parseTakeDocument(text)).toThrow(/version 99/);
   });
 

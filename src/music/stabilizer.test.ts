@@ -3,7 +3,7 @@ import type { ChordState } from "../types";
 import { ChordStabilizer, DwellStabilizer } from "./stabilizer";
 
 function state(overrides: Partial<ChordState> = {}): ChordState {
-  return { chord: "I", isMajorMode: true, qualityIndex: 1, thumbDown: false, ...overrides };
+  return { chord: "I", isMajorMode: true, quality: "octave", ...overrides };
 }
 
 describe("DwellStabilizer", () => {
@@ -113,24 +113,26 @@ describe("ChordStabilizer", () => {
     expect(stabilizer.update(next, 300)).toEqual(next);
   });
 
-  it("treats a changed voicing as a new chord", () => {
+  it("treats a changed kind as a new chord", () => {
     const stabilizer = new ChordStabilizer();
     stabilizer.update(state(), 0);
     stabilizer.update(state(), 100);
 
-    const louder = state({ qualityIndex: 3 });
+    const louder = state({ quality: "add7" });
     expect(stabilizer.update(louder, 150)).toEqual(state());
     expect(stabilizer.update(louder, 250)).toEqual(louder);
   });
 
-  it("treats a thumb flip as a new chord", () => {
+  it("treats coming off the map as a new chord, which is how the hand goes silent", () => {
+    // A pose nothing is mapped to is not a special case: it is a state change like
+    // any other, and the held chord has to be released for it to take effect.
     const stabilizer = new ChordStabilizer();
     stabilizer.update(state(), 0);
     stabilizer.update(state(), 100);
 
-    const dropped = state({ thumbDown: true });
-    expect(stabilizer.update(dropped, 150)).toEqual(state());
-    expect(stabilizer.update(dropped, 250)).toEqual(dropped);
+    const silent = state({ quality: null });
+    expect(stabilizer.update(silent, 150)).toEqual(state());
+    expect(stabilizer.update(silent, 250)).toEqual(silent);
   });
 
   it("forgets everything on reset", () => {

@@ -26,8 +26,7 @@ export type RecordedIntent =
       readonly kind: "chord";
       readonly numeral: ChordNumeral;
       readonly isMajorMode: boolean;
-      readonly qualityIndex: number;
-      readonly thumbDown: boolean;
+      readonly quality: string;
     }
   | { readonly kind: "note"; readonly degree: number }
   | null;
@@ -60,8 +59,7 @@ function toEvent(intent: RecordedIntent, beat: number, volume: number, tilt: num
     tilt,
     numeral: intent.numeral,
     isMajorMode: intent.isMajorMode,
-    qualityIndex: intent.qualityIndex,
-    thumbDown: intent.thumbDown,
+    quality: intent.quality,
   };
 }
 

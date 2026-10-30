@@ -9,8 +9,7 @@ const chord = (beat: number, numeral: "I" | "V" = "I"): TakeEvent => ({
   tilt: 0,
   numeral,
   isMajorMode: true,
-  qualityIndex: 1,
-  thumbDown: false,
+  quality: "octave",
 });
 
 const note = (beat: number, degree = 1): TakeEvent => ({

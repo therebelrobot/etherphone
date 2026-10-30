@@ -10,6 +10,7 @@
  * This module is pure. It does not know about the looper, the DOM, or audio —
  * it turns a take into text and text back into a take, and nothing else.
  */
+import { getQuality } from "./qualities";
 import type { ChordNumeral, InstrumentMode, Take, TakeEvent } from "../types";
 
 /** Marks the file, so a random `.json` is rejected with a useful message. */
@@ -21,8 +22,13 @@ export const TAKE_DOCUMENT_FORMAT = "etherphone.take";
  * A version is written and checked because the alternative is a parser that
  * silently accepts a file it does not understand. Bump this whenever the shape
  * changes; an older file can then be migrated explicitly instead of guessed at.
+ *
+ * Version 2 replaced the chord's `qualityIndex` and `thumbDown` with a single
+ * `quality` id (RFC #19). Version 1 takes are rejected rather than migrated: the
+ * instrument has never had a user who keeps one, and a migration nobody needs is
+ * a migration nobody tests.
  */
-export const TAKE_DOCUMENT_VERSION = 1;
+export const TAKE_DOCUMENT_VERSION = 2;
 
 /** One layer, as it is written to the file. */
 export interface TakeDocumentTrack {
@@ -260,9 +266,14 @@ function parseEvent(raw: unknown, label: string, at: number): TakeEvent {
         throw new Error(`That take's ${where} is not a chord this instrument knows.`);
       }
 
-      const qualityIndex = requireNumber(raw, "qualityIndex");
-      if (!Number.isInteger(qualityIndex) || qualityIndex < 0) {
-        throw new Error(`That take's ${where} has no voicing.`);
+      const quality = raw.quality;
+      // Checked against the catalogue, not merely for being a string: an id the
+      // instrument cannot sound is a typo, and this is the only moment a take can
+      // be told so. A quality removed from the catalogue later would make old
+      // takes unreadable, which is the right way round — the error names the
+      // problem instead of the chord silently losing its kind.
+      if (typeof quality !== "string" || getQuality(quality) === undefined) {
+        throw new Error(`That take's ${where} is not a chord kind this instrument knows.`);
       }
 
       return {
@@ -272,8 +283,7 @@ function parseEvent(raw: unknown, label: string, at: number): TakeEvent {
         tilt,
         numeral: numeral as ChordNumeral,
         isMajorMode: raw.isMajorMode === true,
-        qualityIndex,
-        thumbDown: raw.thumbDown === true,
+        quality,
       };
     }
 

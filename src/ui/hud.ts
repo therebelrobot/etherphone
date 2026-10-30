@@ -42,8 +42,8 @@ export class Hud {
   }
 
   /** Shows the active voicing's label, annotated when dropped an octave. */
-  setQuality(label: string | undefined, thumbDown: boolean): void {
-    this.qualityEl.textContent = label ? `${label}${thumbDown ? " (-8ve)" : ""}` : "--";
+  setQuality(label: string | undefined): void {
+    this.qualityEl.textContent = label ?? "--";
   }
 
   /** Shows the filter sweep as a signed percentage. */

@@ -35,21 +35,22 @@ function colorForChord(chordStr: string): string {
  * Draws one frame of the ribbon.
  *
  * @param volume01 - Master volume, 0..1.
- * @param qualityIndex - Right-hand finger count, 0..4. Zero draws nothing.
+ * @param voices - Notes the current chord kind sounds. Zero draws nothing, so a
+ *   pose the expression hand's map does not name draws no ribbon at all.
  * @param tiltFactor - Right-hand filter tilt, -1..1.
  * @param chord - The current chord numeral, or `null` when nothing is playing.
  */
 export function drawEnergy(
   ctx: CanvasRenderingContext2D | null,
   volume01: number,
-  qualityIndex: number,
+  voices: number,
   tiltFactor: number,
   chord: ChordNumeral | null,
 ): void {
   if (!ctx) return;
-  if (qualityIndex === 0) return;
+  if (voices === 0) return;
 
-  const lineCount = qualityIndex;
+  const lineCount = voices;
 
   try {
     const centerY = ctx.canvas.height - BASELINE_OFFSET;
