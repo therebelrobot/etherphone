@@ -45,6 +45,7 @@
     "samples": "node scripts/generate-samples.mjs",
     "benchmark:pitch-shift": "node scripts/benchmark-pitch-shift.mjs",
     "spike:capture": "vite scripts/capture-spike --port 5199 --open",
+    "shots:menu": "vite scripts/menu-shots --port 5198",
     "docker:build": "docker build -t ghcr.io/therebelrobot/etherphone:local .",
     "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/therebelrobot/etherphone:latest --push .",
     "release:patch": "npm version patch -m \"chore: release v%s\" && git push && git push --tags",

@@ -157,25 +157,14 @@ describe("mapTargetCluster", () => {
     ]);
   });
 
-  it("draws a hand for each, mirrored to match the side", () => {
-    // Two rows of text differing by one word are read twice; two hands are told
-    // apart at a glance.
-    const [chords, kinds] = mapTargetCluster("Left").items;
-
-    expect(chords.glyph?.mirror).toBe(false);
-    expect(kinds.glyph?.mirror).toBe(true);
-  });
-
   it("stays open, because choosing a map only opens the next step", () => {
     expect(mapTargetCluster("Left").items.every((item) => item.keepsMenuOpen)).toBe(true);
   });
 });
 
 describe("the kind editor", () => {
-  const MIRROR = false;
-
   it("lists every pose the hand can make, showing what each plays now", () => {
-    const cluster = expressionPosesCluster(DEFAULT_EXPRESSION_MAP, MIRROR);
+    const cluster = expressionPosesCluster(DEFAULT_EXPRESSION_MAP);
 
     expect(cluster.items).toHaveLength(EXPRESSION_POSES.length);
     expect(cluster.items[0].label).toBe("1 finger → Octave");
@@ -186,7 +175,7 @@ describe("the kind editor", () => {
     // An unmapped pose is a legitimate state — it is how a player silences one —
     // and a blank row would read as a drawing bug.
     const unmapped = withPose(DEFAULT_EXPRESSION_MAP, poseShape({ index: true }), null);
-    const cluster = expressionPosesCluster(unmapped, MIRROR);
+    const cluster = expressionPosesCluster(unmapped);
 
     expect(cluster.items[0].label).toBe("1 finger → nothing");
   });
@@ -207,16 +196,10 @@ describe("the kind editor", () => {
     expect(expressionKindsCluster(unmapped, pose).activeId).toBe(SILENT_SLOT_ID);
   });
 
-  it("draws the pose beside its name, mirrored for the hand holding it", () => {
-    const cluster = expressionPosesCluster(DEFAULT_EXPRESSION_MAP, true);
-
-    expect(cluster.items.every((item) => item.glyph?.mirror === true)).toBe(true);
-  });
-
   it("keeps the menu open at both steps, since each one opens the next", () => {
     // The bug the degree editor shipped with: a step that closes the menu hides
     // the step it just opened.
-    const poses = expressionPosesCluster(DEFAULT_EXPRESSION_MAP, MIRROR);
+    const poses = expressionPosesCluster(DEFAULT_EXPRESSION_MAP);
     const kinds = expressionKindsCluster(DEFAULT_EXPRESSION_MAP, poseShape({ index: true }));
 
     expect(poses.items.every((item) => item.keepsMenuOpen)).toBe(true);

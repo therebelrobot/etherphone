@@ -45,17 +45,31 @@ export interface HandGlyph {
 export const GLYPH_FINGERS: readonly FingerName[] = ["index", "middle", "ring", "pinky"];
 
 /** How far a finger reaches when it is held up, and when it is folded in. */
-const EXTENDED = 0.46;
+const EXTENDED = 0.54;
 const FOLDED = 0.13;
 
-/** The thumb leans out rather than reaching straight up, and reaches less far. */
-const THUMB_ANGLE = 1.05;
+/**
+ * The thumb leans out rather than reaching straight up, and reaches less far.
+ *
+ * It starts *inside* the palm's edge rather than beside it: a thumb drawn from
+ * outside the palm is a stroke floating next to a box, which is what the first
+ * version looked like.
+ */
+const THUMB_ANGLE = 1.1;
 const THUMB_EXTENDED = 0.26;
 const THUMB_FOLDED = 0.1;
 
+/**
+ * The palm's outline, in glyph units like everything else.
+ *
+ * Units rather than pixels because the whole glyph scales with its size, and a
+ * stroke measured in pixels would be the one part of the drawing that did not.
+ */
+const OUTLINE = 0.05;
+
 /** The gap between neighbouring fingers, and the width of one. */
-const SPREAD = 0.125;
-const WIDTH = 0.085;
+const SPREAD = 0.15;
+const WIDTH = 0.1;
 
 /**
  * The glyph for a pose.
@@ -85,8 +99,9 @@ export function handGlyph(pose: HandShape, mirror = false): HandGlyph {
 
   const thumb: GlyphStroke = {
     name: "thumb",
-    x: side * -0.33,
-    y: 0.02,
+    // The palm's half-width, so the joint is where the palm is.
+    x: side * -0.3,
+    y: 0.04,
     length: thumbExtended ? THUMB_EXTENDED : THUMB_FOLDED,
     width: WIDTH + 0.02,
     // Leaning outwards, which is the way a thumb reads as a thumb.
@@ -94,9 +109,35 @@ export function handGlyph(pose: HandShape, mirror = false): HandGlyph {
   };
 
   return {
-    palm: { width: 0.5, height: 0.42, radius: 0.15 },
+    palm: { width: 0.6, height: 0.44, radius: 0.17 },
     fingers: [...long, thumb],
   };
+}
+
+/**
+ * The glyph's vertical extent in its own units.
+ *
+ * Exposed because a row has a height and a glyph does not: the first version drew
+ * from the point it was given, so the fingers poked out of the top of every row.
+ * The drawer uses this to centre the hand on the point instead.
+ */
+export function handGlyphBounds(glyph: HandGlyph): {
+  readonly top: number;
+  readonly bottom: number;
+} {
+  const palmTop = -0.09;
+
+  let top = palmTop;
+  let bottom = palmTop + glyph.palm.height;
+
+  for (const finger of glyph.fingers) {
+    const tipY = finger.y - Math.cos(finger.angle) * finger.length;
+
+    top = Math.min(top, finger.y, tipY);
+    bottom = Math.max(bottom, tipY);
+  }
+
+  return { top, bottom };
 }
 
 /** Everything the drawer needs to put a glyph on a canvas. */
@@ -109,7 +150,6 @@ export interface HandGlyphDrawOptions {
   readonly mirror?: boolean;
   readonly colour: string;
   readonly alpha?: number;
-  readonly lineWidth?: number;
 }
 
 /**
@@ -125,16 +165,21 @@ export function drawHandGlyph(
 ): void {
   if (!ctx) return;
 
-  const { x, y, size, pose, mirror = false, colour, alpha = 1, lineWidth = 2 } = options;
+  const { x, y, size, pose, mirror = false, colour, alpha = 1 } = options;
   const glyph = handGlyph(pose, mirror);
+
+  const { top, bottom } = handGlyphBounds(glyph);
 
   ctx.save();
   ctx.translate(x, y);
+  // The point given is the hand's centre, not its wrist: a caller places a glyph
+  // in a row, and a row is measured from its middle.
+  ctx.translate(0, -(top + bottom) / 2);
   ctx.scale(size, size);
   ctx.globalAlpha = alpha;
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
-  ctx.lineWidth = lineWidth / size;
+  ctx.lineWidth = OUTLINE;
   ctx.lineCap = "round";
 
   ctx.beginPath();
@@ -157,7 +202,10 @@ export function drawHandGlyph(
     ctx.beginPath();
     ctx.moveTo(finger.x, finger.y);
     ctx.lineTo(tipX, tipY);
-    ctx.lineWidth = finger.width / size;
+    // In glyph units, *not* divided by the size: the context is already scaled, so
+    // dividing here drew fingers a tenth of a pixel wide — invisible ink, which
+    // looks exactly like no drawing at all.
+    ctx.lineWidth = finger.width;
     ctx.stroke();
   }
 

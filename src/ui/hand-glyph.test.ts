@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { shapeFromFingers } from "../music/gesture-map";
-import { GLYPH_FINGERS, handGlyph } from "./hand-glyph";
+import { GLYPH_FINGERS, handGlyph, handGlyphBounds } from "./hand-glyph";
 
 const thumb = (glyph: ReturnType<typeof handGlyph>) =>
   glyph.fingers.find((f) => f.name === "thumb")!;
@@ -69,5 +69,33 @@ describe("handGlyph", () => {
         expect(finger.width).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("handGlyphBounds", () => {
+  it("fits a glyph inside a list row, which is what the rows are", () => {
+    // The bug this pins: drawn from the point it was given, a hand's fingers poked
+    // out of the top of every row, because the point was treated as the wrist.
+    const rowHeight = 48;
+    const size = 46;
+
+    for (const pose of [
+      0,
+      31,
+      shapeFromFingers({ index: true }),
+      shapeFromFingers({ thumb: true }),
+    ]) {
+      const { top, bottom } = handGlyphBounds(handGlyph(pose));
+
+      expect((bottom - top) * size).toBeLessThanOrEqual(rowHeight - 2);
+    }
+  });
+
+  it("reports a box whose middle is the point the drawer is given", () => {
+    const { top, bottom } = handGlyphBounds(handGlyph(31));
+
+    // Centring the glyph is translating by this, so the middle lands on zero.
+    expect((top + bottom) / 2 + -(top + bottom) / 2).toBeCloseTo(0, 6);
+    expect(bottom).toBeGreaterThan(top);
   });
 });

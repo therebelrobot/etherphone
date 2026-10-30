@@ -46,6 +46,7 @@ import {
   CUSTOM_MAP_SLOTS,
   customMapFromSlots,
   decodeCustomMap,
+  describeSlotTarget,
   encodeCustomMap,
   hashForCustomMap,
   slotsFromHash,
@@ -55,6 +56,7 @@ import type { CustomMapSlots, SlotTarget } from "./music/custom-map";
 import {
   DEFAULT_GESTURE_MAP_ID,
   GESTURE_MAPS,
+  OPEN_HAND,
   getGestureMap,
   shiftNumeral,
 } from "./music/gesture-map";
@@ -77,6 +79,8 @@ import { canRequestMicrophone, startMicrophone } from "./audio/microphone";
 import { recordVoiceLoop as captureVoiceBuffer } from "./audio/voice-capture";
 import { isSilentCapture, loopFrameCount } from "./audio/voice-loop";
 import { getQuality, getQualityLabel, getQualityNotes } from "./music/qualities";
+import { diagramSizeFor, drawMappingDiagram } from "./ui/mapping-diagram";
+import type { DiagramHand } from "./ui/mapping-diagram";
 import {
   decodeExpressionMap,
   DEFAULT_EXPRESSION_MAP,
@@ -104,7 +108,7 @@ import { GestureGuide } from "./ui/gesture-guide";
 import { HelpModal } from "./ui/help-modal";
 import { Hud } from "./ui/hud";
 import { menuTopicsFor, MenuController } from "./ui/menu-controller";
-import type { MenuClusterName, MenuTopic } from "./ui/menu-controller";
+import type { MenuClusterName, MenuTopic, MenuUpdate } from "./ui/menu-controller";
 import {
   EDIT_MAP_ID,
   expressionKindsCluster,
@@ -121,7 +125,14 @@ import {
   vocabularyCluster,
 } from "./ui/menu-clusters";
 import type { MapTarget } from "./ui/menu-clusters";
-import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/radial-menu";
+import {
+  drawCluster,
+  drawMenuBackdrop,
+  listBandLeft,
+  listBandWidth,
+  MENUS_STYLE,
+  OPTIONS_STYLE,
+} from "./ui/radial-menu";
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { downloadBlob } from "./ui/download";
 import { StartOverlay } from "./ui/start-overlay";
@@ -189,6 +200,20 @@ function notesFor(state: ChordState, tonicFrequency: number): number[] {
 
 /** The id of the entry that turns re-articulation on or off. */
 const REARTICULATE_ID = "rearticulate";
+
+/**
+ * How tall a diagram hand is drawn.
+ *
+ * Large enough to hold a real hand up against, which is the only reason to draw
+ * one at all — at row size it is a smudge beside a label.
+ */
+const MAPPING_DIAGRAM_SIZE = 200;
+
+/** The smallest a diagram is worth drawing at, below which it stops being usable. */
+const MAPPING_MIN_SIZE = 110;
+
+/** How far a ring reaches from its anchor: its radius plus an option's. */
+const RING_REACH = 244;
 
 /**
  * The id of the "save the take" entry in the transport menu.
@@ -1964,8 +1989,21 @@ export class GestureSynthApp {
     }
 
     drawMenuBackdrop(this.els.ctx, update.elapsedMs);
+
+    if (this.menuId === "map") this.drawMapping(update);
+
     drawCluster(this.els.ctx, update.menus, MENUS_STYLE);
-    drawCluster(this.els.ctx, update.options, OPTIONS_STYLE);
+    // The ring is anchored to a hand and a list is a column down the middle, so
+    // the list is told where the ring is and moves to the other half: drawn on top
+    // of each other, neither can be read.
+    drawCluster(
+      this.els.ctx,
+      update.options,
+      OPTIONS_STYLE,
+      update.menus.layout === "radial"
+        ? { x: update.menus.centerX, y: update.menus.centerY }
+        : undefined,
+    );
 
     this.hud.setNote(this.menuTitle(update.menus));
     this.hud.setQuality(
@@ -2218,7 +2256,7 @@ export class GestureSynthApp {
 
       if (this.mapTarget === "kinds") {
         return this.poseFocus === null
-          ? expressionPosesCluster(this.expressionMap, this.expressionHandIsRight())
+          ? expressionPosesCluster(this.expressionMap)
           : expressionKindsCluster(this.expressionMap, this.poseFocus);
       }
 
@@ -2239,6 +2277,92 @@ export class GestureSynthApp {
     // In Chords mode the vocabulary menu is the map picker, plus the way into
     // the editor.
     return vocabularyCluster(asOptions(this.els.gestureMapSelect), this.els.gestureMapSelect.value);
+  }
+
+  /**
+   * The mapping, drawn large: both hands, with the pose in hand on the one that
+   * owns it.
+   *
+   * The hovered option is what the diagram follows, not the committed one, so the
+   * hand redraws as the cursor moves between poses — which is the whole point of
+   * drawing it at a size you can hold your own hand against.
+   */
+  private drawMapping(update: MenuUpdate): void {
+    const chordHand = this.harmonyHand;
+    const kindHand = otherHand(chordHand);
+    const hovered = update.options.hoveredId;
+
+    const chord: DiagramHand = {
+      pose: this.chordDiagramPose(hovered),
+      mirror: chordHand === "Right",
+      caption: this.chordDiagramCaption(hovered),
+      rest: this.mapTarget !== "chords",
+    };
+
+    const kinds: DiagramHand = {
+      pose: this.kindDiagramPose(hovered),
+      mirror: kindHand === "Right",
+      caption: this.kindDiagramCaption(hovered),
+      rest: this.mapTarget !== "kinds",
+    };
+
+    const width = this.els.canvas.width;
+    const ringX = update.menus.centerX;
+    const listLeft = listBandLeft(width, listBandWidth(width), { x: ringX, y: 0 });
+
+    // The band the ring and the list leave between them, whichever side each is
+    // on. The diagram is drawn in it and as large as it allows: a diagram sized to
+    // a column is a diagram not worth drawing, which is why the walkthrough gives
+    // it a screen of its own.
+    const [bandStart, bandEnd] =
+      ringX < width / 2
+        ? [ringX + RING_REACH, listLeft]
+        : [listLeft + listBandWidth(width), ringX - RING_REACH];
+    const band = Math.max(0, bandEnd - bandStart);
+    const size = Math.max(MAPPING_MIN_SIZE, Math.min(MAPPING_DIAGRAM_SIZE, diagramSizeFor(band)));
+
+    drawMappingDiagram(this.els.ctx, {
+      x: bandStart + band / 2,
+      y: this.els.canvas.height * 0.5,
+      size,
+      hands: [chord, kinds],
+      colour: "#e8a13d",
+    });
+  }
+
+  /** The shape the chord hand is shown making: the hovered shape, or at rest. */
+  private chordDiagramPose(hovered: string | null): HandShape {
+    const id = hovered ?? this.customSlotFocus;
+    const slot = CUSTOM_MAP_SLOTS.find((candidate) => candidate.id === id);
+
+    return slot ? slot.shape : OPEN_HAND;
+  }
+
+  /** What that shape plays, or the hand's job while nothing is in hand. */
+  private chordDiagramCaption(hovered: string | null): string {
+    const id = hovered ?? this.customSlotFocus;
+    const slot = CUSTOM_MAP_SLOTS.find((candidate) => candidate.id === id);
+    if (!slot) return "which chord";
+
+    const target = describeSlotTarget(slot.read(this.customSlots ?? slotsFromMap(this.gestureMap)));
+
+    return `${slot.label} → ${target}`;
+  }
+
+  /** The shape the expression hand is shown making: the hovered pose, or the one in hand. */
+  private kindDiagramPose(hovered: string | null): HandShape {
+    return poseFromOptionId(hovered ?? "") ?? this.poseFocus ?? OPEN_HAND;
+  }
+
+  /** What that pose plays, or the hand's job while nothing is in hand. */
+  private kindDiagramCaption(hovered: string | null): string {
+    const pose = this.kindDiagramPose(hovered);
+    const kind = qualityForPose(this.expressionMap, pose);
+
+    if (this.mapTarget !== "kinds" && this.poseFocus === null && pose === OPEN_HAND)
+      return "what kind";
+
+    return kind === null ? describePose(pose) : (getQualityLabel(kind) ?? describePose(pose));
   }
 
   /** The label of a cluster's hovered item, for the readout. */
@@ -2481,11 +2605,6 @@ export class GestureSynthApp {
   private setExpressionPose(pose: HandShape, quality: string | null): void {
     this.expressionMap = withPose(this.expressionMap, pose, quality);
     remember(EXPRESSION_MAP_STORAGE_KEY, encodeExpressionMap(this.expressionMap));
-  }
-
-  /** Whether the expression hand is the player's right, so a diagram is mirrored. */
-  private expressionHandIsRight(): boolean {
-    return otherHand(this.harmonyHand) === "Right";
   }
 
   /** How long a recording waits to begin: the next bar line, or the next beat. */

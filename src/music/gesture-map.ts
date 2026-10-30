@@ -72,6 +72,15 @@ function countMap(
   return shapes;
 }
 
+/** Every finger extended: the hand at rest, which is what a diagram starts from. */
+export const OPEN_HAND = shapeFromFingers({
+  thumb: true,
+  index: true,
+  middle: true,
+  ring: true,
+  pinky: true,
+});
+
 /** The shape the original instrument calls the submediant: index + pinky. */
 export const ROCK_SIGN = shapeFromFingers({ index: true, pinky: true });
 /** The leading-tone variant: the rock sign with the thumb out too. */

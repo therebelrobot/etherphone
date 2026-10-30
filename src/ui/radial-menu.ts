@@ -12,8 +12,7 @@
  * in screen coordinates — see `landmarkToCanvas`.
  */
 import { CONTROL } from "../config/constants";
-import type { CanvasPoint, HandShape, RadialSlot } from "../types";
-import { drawHandGlyph } from "./hand-glyph";
+import type { CanvasPoint, RadialSlot } from "../types";
 
 /** One thing the menu can choose. */
 export interface MenuOption {
@@ -27,14 +26,6 @@ export interface MenuOption {
    * so switching has to re-render the ring rather than close it.
    */
   readonly keepsMenuOpen?: boolean;
-  /**
-   * A hand to draw beside the label, for entries that *are* a hand shape.
-   *
-   * A pose described in words has to be held in working memory and compared to
-   * the hand; a picture is checked against the hand directly. Only list rows draw
-   * it, because a ring's slots have no room for anything but a short label.
-   */
-  readonly glyph?: { readonly pose: HandShape; readonly mirror?: boolean };
 }
 
 /** Everything one frame of one cluster needs to draw itself. */
@@ -73,6 +64,14 @@ const STEEL = "#7fa8c9";
 const DIMMED = "rgba(10, 10, 10, 0.6)";
 const OPTION_IDLE = "rgba(20, 20, 20, 0.75)";
 const EDGE = "#3a3428";
+
+/** How far a shifted list sits from the canvas edge, and what it leaves beside it. */
+export const LIST_MARGIN = 40;
+
+/** How wide a list is allowed to be on a canvas, which the diagram also needs. */
+export function listBandWidth(canvasWidth: number): number {
+  return Math.min(CONTROL.listRowWidth, canvasWidth * 0.8);
+}
 
 /** The one thing a player cannot guess: how to leave without choosing. */
 const DISMISS_HINT = "close both hands again to dismiss";
@@ -405,6 +404,16 @@ export function drawCluster(
   ctx: CanvasRenderingContext2D | null,
   frame: ClusterFrame,
   style: ClusterStyle,
+  /**
+   * The other cluster's anchor, when it is a ring.
+   *
+   * A ring is anchored to a hand and a list is a column down the middle, so on a
+   * wide screen they are drawn on top of each other: the ring's labels end up
+   * behind the rows and neither can be read. Given the anchor, the list moves to
+   * the half of the screen the ring is not in. Selection is unaffected, because a
+   * row is chosen by the cursor's *height* — see `listRowAt`.
+   */
+  otherAnchor?: CanvasPoint,
 ): void {
   if (!ctx) return;
 
@@ -414,10 +423,26 @@ export function drawCluster(
   const fade = frame.isActive ? 1 : 0.35;
 
   if (frame.layout === "list") {
-    drawListCluster(ctx, frame, style, fade);
+    drawListCluster(ctx, frame, style, fade, otherAnchor);
   } else {
     drawRingCluster(ctx, frame, style, fade);
   }
+}
+
+/**
+ * Where a list's rows start.
+ *
+ * Centred when it is the only thing on screen, and moved to whichever half the
+ * ring is *not* in when there is one. `LIST_MARGIN` keeps it off the canvas edge.
+ *
+ * Exported because the space this leaves is a fact about the screen, and the
+ * editor draws a diagram in it: two things placing themselves around the same
+ * ring have to agree on where the ring is.
+ */
+export function listBandLeft(width: number, rowWidth: number, otherAnchor?: CanvasPoint): number {
+  if (!otherAnchor) return (width - rowWidth) / 2;
+
+  return otherAnchor.x < width / 2 ? width - rowWidth - LIST_MARGIN : LIST_MARGIN;
 }
 
 /** Draws a cluster laid out around its anchor. */
@@ -516,10 +541,12 @@ function drawListCluster(
   frame: ClusterFrame,
   style: ClusterStyle,
   fade: number,
+  otherAnchor?: CanvasPoint,
 ): void {
   const { rows, items, activeId, centerY, hoveredId, dwellProgress, elapsedMs } = frame;
   const { width } = ctx.canvas;
   const rowWidth = Math.min(CONTROL.listRowWidth, width * 0.8);
+  const left = listBandLeft(width, rowWidth, otherAnchor);
 
   ctx.save();
 
@@ -535,7 +562,6 @@ function drawListCluster(
     const isHovered = row.id === hoveredId;
     const isActive = row.id === activeId;
 
-    const left = (width - rowWidth) / 2;
     const top = state.y - state.height / 2 + 3;
     const barHeight = state.height - 6;
 
@@ -562,26 +588,7 @@ function drawListCluster(
     }
 
     ctx.fillStyle = style.accent;
-
-    if (item?.glyph) {
-      // The glyph takes the left of the row and the label follows it, so a column
-      // of poses reads as a column of pictures with their names beside them.
-      drawHandGlyph(ctx, {
-        x: left + 40,
-        y: state.y,
-        size: 46,
-        pose: item.glyph.pose,
-        mirror: item.glyph.mirror ?? false,
-        colour: style.accent,
-        alpha: state.alpha * fade,
-      });
-
-      ctx.textAlign = "left";
-      ctx.fillText(item ? labelFor(item, style) : row.label, left + 76, state.y);
-      ctx.textAlign = "center";
-    } else {
-      ctx.fillText(item ? labelFor(item, style) : row.label, width / 2, state.y);
-    }
+    ctx.fillText(item ? labelFor(item, style) : row.label, left + rowWidth / 2, state.y);
 
     ctx.globalAlpha = fade;
   });

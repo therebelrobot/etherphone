@@ -19,7 +19,6 @@ import { CUSTOM_MAP_SLOTS, describeSlotTarget } from "../music/custom-map";
 import type { CustomMapSlots } from "../music/custom-map";
 import { describePose, EXPRESSION_POSES, poseShape, qualityForPose } from "../music/expression-map";
 import type { ExpressionMap } from "../music/expression-map";
-import { shapeFromFingers } from "../music/gesture-map";
 import { otherHand } from "../music/hands";
 import { getQualityLabel, QUALITIES } from "../music/qualities";
 import type { ChordNumeral, Handedness, HandShape } from "../types";
@@ -141,15 +140,6 @@ export type MapTarget = "chords" | "kinds";
 export const MAP_TARGET_CHORDS_ID = "map-chords";
 export const MAP_TARGET_KINDS_ID = "map-kinds";
 
-/** An open hand, for the diagram that shows which hand is which. */
-const OPEN_HAND = shapeFromFingers({
-  thumb: true,
-  index: true,
-  middle: true,
-  ring: true,
-  pinky: true,
-});
-
 /** A pose as an option id, so a shape can travel through the menu as a string. */
 export function poseOptionId(pose: HandShape): string {
   return `pose:${pose}`;
@@ -187,13 +177,11 @@ export function mapTargetCluster(chordHand: Handedness): MenuClusterContents {
         id: MAP_TARGET_CHORDS_ID,
         label: `${chordHand} hand — which chord`,
         keepsMenuOpen: true,
-        glyph: { pose: OPEN_HAND, mirror: chordHand === "Right" },
       },
       {
         id: MAP_TARGET_KINDS_ID,
         label: `${kindHand} hand — what kind`,
         keepsMenuOpen: true,
-        glyph: { pose: OPEN_HAND, mirror: kindHand === "Right" },
       },
     ],
   };
@@ -203,10 +191,11 @@ export function mapTargetCluster(chordHand: Handedness): MenuClusterContents {
  * The poses the expression hand can be given, each showing what it plays now.
  *
  * A list rather than a ring: eight poses with names like "2 fingers + thumb" do
- * not fit in a ring's circles, and a list row has room for the drawing that makes
- * the name unnecessary anyway.
+ * not fit in a ring's circles. The drawing that makes the names unnecessary is
+ * the diagram beside the list, which is large enough to check a hand against —
+ * not a picture per row, which is read at the same size as the words.
  */
-export function expressionPosesCluster(map: ExpressionMap, mirror: boolean): MenuClusterContents {
+export function expressionPosesCluster(map: ExpressionMap): MenuClusterContents {
   return {
     layout: "list",
     items: EXPRESSION_POSES.map((pose) => {
@@ -217,7 +206,6 @@ export function expressionPosesCluster(map: ExpressionMap, mirror: boolean): Men
         id: poseOptionId(shape),
         label: `${describePose(shape)} → ${kind === null ? "nothing" : (getQualityLabel(kind) ?? "nothing")}`,
         keepsMenuOpen: true,
-        glyph: { pose: shape, mirror },
       };
     }),
   };
