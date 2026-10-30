@@ -23,6 +23,7 @@ import {
   AUDIO,
   BARS_STORAGE_KEY,
   CUSTOM_MAP_STORAGE_KEY,
+  EXPRESSION_MAP_STORAGE_KEY,
   GESTURE_MAP_LEFT_STORAGE_KEY,
   GESTURE_MAP_RIGHT_STORAGE_KEY,
   GESTURE_MAP_STORAGE_KEY,
@@ -75,8 +76,15 @@ import { renderTakeToWav } from "./audio/render";
 import { canRequestMicrophone, startMicrophone } from "./audio/microphone";
 import { recordVoiceLoop as captureVoiceBuffer } from "./audio/voice-capture";
 import { isSilentCapture, loopFrameCount } from "./audio/voice-loop";
-import { getQualityLabel, getQualityNotes } from "./music/qualities";
-import { DEFAULT_EXPRESSION_MAP, qualityForPose } from "./music/expression-map";
+import { getQuality, getQualityLabel, getQualityNotes } from "./music/qualities";
+import {
+  decodeExpressionMap,
+  DEFAULT_EXPRESSION_MAP,
+  describePose,
+  encodeExpressionMap,
+  qualityForPose,
+  withPose,
+} from "./music/expression-map";
 import type { ExpressionMap } from "./music/expression-map";
 import type {
   CanvasPoint,
@@ -85,6 +93,7 @@ import type {
   GestureMap,
   Hand,
   Handedness,
+  HandShape,
   InstrumentMode,
   KeyName,
   MonoStyle,
@@ -98,13 +107,20 @@ import { menuTopicsFor, MenuController } from "./ui/menu-controller";
 import type { MenuClusterName, MenuTopic } from "./ui/menu-controller";
 import {
   EDIT_MAP_ID,
+  expressionKindsCluster,
+  expressionPosesCluster,
   MAP_BACK_ID,
+  MAP_TARGET_CHORDS_ID,
+  MAP_TARGET_KINDS_ID,
   mapEditorCluster,
+  mapTargetCluster,
   MODIFIER_SLOT_ID,
   NUMERALS_SET,
+  poseFromOptionId,
   SILENT_SLOT_ID,
   vocabularyCluster,
 } from "./ui/menu-clusters";
+import type { MapTarget } from "./ui/menu-clusters";
 import { drawCluster, drawMenuBackdrop, MENUS_STYLE, OPTIONS_STYLE } from "./ui/radial-menu";
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { downloadBlob } from "./ui/download";
@@ -413,6 +429,7 @@ export class GestureSynthApp {
       }
     }
 
+    this.expressionMap = this.readStoredExpressionMap();
     this.refreshGestureMap();
     this.applyModeVisibility();
   }
@@ -1214,6 +1231,18 @@ export class GestureSynthApp {
     return slotsFromHash(window.location.hash);
   }
 
+  /** Reads the remembered pose map, falling back to the default vocabulary. */
+  private readStoredExpressionMap(): ExpressionMap {
+    try {
+      const stored = window.localStorage.getItem(EXPRESSION_MAP_STORAGE_KEY);
+      const map = stored === null ? null : decodeExpressionMap(stored);
+
+      return map ?? DEFAULT_EXPRESSION_MAP;
+    } catch {
+      return DEFAULT_EXPRESSION_MAP;
+    }
+  }
+
   /** Reads the remembered custom map, or `null` when there is not a usable one. */
   private readStoredCustomMap(): CustomMapSlots | null {
     try {
@@ -1929,6 +1958,8 @@ export class GestureSynthApp {
       this.menuId = "vocabulary";
       this.layerFocus = null;
       this.customSlotFocus = null;
+      this.mapTarget = null;
+      this.poseFocus = null;
       return false;
     }
 
@@ -1967,9 +1998,20 @@ export class GestureSynthApp {
     // place that can say where the player is. Without it, choosing *Edit map…*
     // looked like nothing had happened.
     if (this.menuId === "map") {
-      const focused = CUSTOM_MAP_SLOTS.find((slot) => slot.id === this.customSlotFocus);
+      // Named at every step, because a three-step drill-down that only says the
+      // first one leaves a player unable to tell the shape list from the kind
+      // list — they are both lists of eight things.
+      if (this.mapTarget === "kinds") {
+        return this.poseFocus === null ? "What kind" : describePose(this.poseFocus);
+      }
 
-      return focused ? focused.label : "Edit map";
+      if (this.mapTarget === "chords") {
+        const focused = CUSTOM_MAP_SLOTS.find((slot) => slot.id === this.customSlotFocus);
+
+        return focused ? focused.label : "Which chord";
+      }
+
+      return "Edit map";
     }
 
     return this.menuLabel(frame);
@@ -2171,6 +2213,15 @@ export class GestureSynthApp {
     }
 
     if (this.menuId === "map") {
+      // Three steps deep at most: which hand, then the shape, then what it does.
+      if (this.mapTarget === null) return mapTargetCluster(this.harmonyHand);
+
+      if (this.mapTarget === "kinds") {
+        return this.poseFocus === null
+          ? expressionPosesCluster(this.expressionMap, this.expressionHandIsRight())
+          : expressionKindsCluster(this.expressionMap, this.poseFocus);
+      }
+
       return mapEditorCluster(
         this.customSlots ?? slotsFromMap(this.gestureMap),
         this.customSlotFocus,
@@ -2331,6 +2382,10 @@ export class GestureSynthApp {
       this.setGestureMap(CUSTOM_MAP_ID);
       this.menuId = "map";
       this.customSlotFocus = null;
+      // Editing starts by asking *which* map: the chord hand's degrees, or the
+      // expression hand's kinds.
+      this.mapTarget = null;
+      this.poseFocus = null;
       return;
     }
 
@@ -2354,6 +2409,19 @@ export class GestureSynthApp {
    * would be most of the work of editing.
    */
   private applyMapEdit(id: string): void {
+    // The step that says which map, before either map's own steps.
+    if (this.mapTarget === null) {
+      if (id === MAP_TARGET_CHORDS_ID) this.mapTarget = "chords";
+      if (id === MAP_TARGET_KINDS_ID) this.mapTarget = "kinds";
+
+      return;
+    }
+
+    if (this.mapTarget === "kinds") {
+      this.applyKindEdit(id);
+      return;
+    }
+
     if (!this.customSlotFocus) {
       if (CUSTOM_MAP_SLOTS.some((slot) => slot.id === id)) this.customSlotFocus = id;
       return;
@@ -2379,6 +2447,45 @@ export class GestureSynthApp {
     this.resetTranspose();
     this.refreshGestureMap();
     this.refreshHelp();
+  }
+
+  /**
+   * One step of the kind editor: choose a pose, or give it a kind.
+   *
+   * The assignment stays open, like the degree editor's, so several poses can be
+   * changed in one visit rather than reopening the menu between each.
+   */
+  private applyKindEdit(id: string): void {
+    if (this.poseFocus === null) {
+      const pose = poseFromOptionId(id);
+      if (pose !== null) this.poseFocus = pose;
+
+      return;
+    }
+
+    if (id === MAP_BACK_ID) {
+      this.poseFocus = null;
+      return;
+    }
+
+    const quality = id === SILENT_SLOT_ID ? null : id;
+
+    // Anything that is not a kind in the catalogue is not a kind; the menu only
+    // offers real ones, so this is a guard on the id rather than on the player.
+    if (quality !== null && getQuality(quality) === undefined) return;
+
+    this.setExpressionPose(this.poseFocus, quality);
+  }
+
+  /** Gives one pose a kind, and remembers the map it makes. */
+  private setExpressionPose(pose: HandShape, quality: string | null): void {
+    this.expressionMap = withPose(this.expressionMap, pose, quality);
+    remember(EXPRESSION_MAP_STORAGE_KEY, encodeExpressionMap(this.expressionMap));
+  }
+
+  /** Whether the expression hand is the player's right, so a diagram is mirrored. */
+  private expressionHandIsRight(): boolean {
+    return otherHand(this.harmonyHand) === "Right";
   }
 
   /** How long a recording waits to begin: the next bar line, or the next beat. */
@@ -2423,7 +2530,19 @@ export class GestureSynthApp {
    * kind* — and the two are read from different hands. Editable in the same way
    * once the editor can choose a hand (RFC #19, stage b).
    */
-  private readonly expressionMap: ExpressionMap = DEFAULT_EXPRESSION_MAP;
+  private expressionMap: ExpressionMap = DEFAULT_EXPRESSION_MAP;
+
+  /**
+   * Which map the editor is working on, or `null` for the step that asks.
+   *
+   * The editor had one map for as long as there was one; a step that names the
+   * hand is what lets there be two without the two sets of options being confused
+   * for each other.
+   */
+  private mapTarget: MapTarget | null = null;
+
+  /** The expression hand's pose being given a kind, while the editor is in it. */
+  private poseFocus: HandShape | null = null;
 
   /**
    * Transpositions armed by the map's modifier shape, waiting for a chord.

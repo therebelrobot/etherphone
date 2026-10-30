@@ -17,7 +17,12 @@
  */
 import { CUSTOM_MAP_SLOTS, describeSlotTarget } from "../music/custom-map";
 import type { CustomMapSlots } from "../music/custom-map";
-import type { ChordNumeral } from "../types";
+import { describePose, EXPRESSION_POSES, poseShape, qualityForPose } from "../music/expression-map";
+import type { ExpressionMap } from "../music/expression-map";
+import { shapeFromFingers } from "../music/gesture-map";
+import { otherHand } from "../music/hands";
+import { getQualityLabel, QUALITIES } from "../music/qualities";
+import type { ChordNumeral, Handedness, HandShape } from "../types";
 import type { MenuLayout, MenuOption } from "./radial-menu";
 
 /**
@@ -126,5 +131,118 @@ export function mapEditorCluster(slots: CustomMapSlots, focus: string | null): M
       { id: MAP_BACK_ID, label: "Back", keepsMenuOpen: true },
     ],
     activeId: numeral ?? SILENT_SLOT_ID,
+  };
+}
+
+/** Which hand's map the editor is working on. */
+export type MapTarget = "chords" | "kinds";
+
+/** The ids of the step that chooses a map. */
+export const MAP_TARGET_CHORDS_ID = "map-chords";
+export const MAP_TARGET_KINDS_ID = "map-kinds";
+
+/** An open hand, for the diagram that shows which hand is which. */
+const OPEN_HAND = shapeFromFingers({
+  thumb: true,
+  index: true,
+  middle: true,
+  ring: true,
+  pinky: true,
+});
+
+/** A pose as an option id, so a shape can travel through the menu as a string. */
+export function poseOptionId(pose: HandShape): string {
+  return `pose:${pose}`;
+}
+
+/** The pose an option id names, or `null` when it names something else. */
+export function poseFromOptionId(id: string): HandShape | null {
+  if (!id.startsWith("pose:")) return null;
+
+  const pose = Number(id.slice("pose:".length));
+
+  return Number.isInteger(pose) && pose >= 0 && pose <= 31 ? pose : null;
+}
+
+/**
+ * The step that says **which hand's map** you are editing.
+ *
+ * This is the step the editor was missing: it had one map, so it never had to say
+ * which one. Naming the entries by hand rather than by axis ("left hand — which
+ * chord") is deliberate, because that is the question a player is actually
+ * asking, and the hand names follow the Chords-hand setting so the answer is
+ * never out of date.
+ *
+ * Both entries are drawn as a hand. Two rows of text that differ by one word are
+ * read twice; two hands are told apart at a glance, and a player who cannot
+ * remember which side they play with can look.
+ */
+export function mapTargetCluster(chordHand: Handedness): MenuClusterContents {
+  const kindHand = otherHand(chordHand);
+
+  return {
+    layout: "list",
+    items: [
+      {
+        id: MAP_TARGET_CHORDS_ID,
+        label: `${chordHand} hand — which chord`,
+        keepsMenuOpen: true,
+        glyph: { pose: OPEN_HAND, mirror: chordHand === "Right" },
+      },
+      {
+        id: MAP_TARGET_KINDS_ID,
+        label: `${kindHand} hand — what kind`,
+        keepsMenuOpen: true,
+        glyph: { pose: OPEN_HAND, mirror: kindHand === "Right" },
+      },
+    ],
+  };
+}
+
+/**
+ * The poses the expression hand can be given, each showing what it plays now.
+ *
+ * A list rather than a ring: eight poses with names like "2 fingers + thumb" do
+ * not fit in a ring's circles, and a list row has room for the drawing that makes
+ * the name unnecessary anyway.
+ */
+export function expressionPosesCluster(map: ExpressionMap, mirror: boolean): MenuClusterContents {
+  return {
+    layout: "list",
+    items: EXPRESSION_POSES.map((pose) => {
+      const shape = poseShape(pose);
+      const kind = qualityForPose(map, shape);
+
+      return {
+        id: poseOptionId(shape),
+        label: `${describePose(shape)} → ${kind === null ? "nothing" : (getQualityLabel(kind) ?? "nothing")}`,
+        keepsMenuOpen: true,
+        glyph: { pose: shape, mirror },
+      };
+    }),
+  };
+}
+
+/**
+ * The kinds a pose can be given.
+ *
+ * The whole catalogue plus *Nothing*, because unmapping a pose is how a player
+ * silences it — the same move the degree editor offers, for the same reason.
+ */
+export function expressionKindsCluster(map: ExpressionMap, pose: HandShape): MenuClusterContents {
+  const current = qualityForPose(map, pose);
+
+  return {
+    layout: "list",
+    items: [
+      ...QUALITIES.map((quality) => ({
+        id: quality.id,
+        label: quality.label,
+        keepsMenuOpen: true,
+      })),
+      { id: SILENT_SLOT_ID, label: "Nothing", keepsMenuOpen: true },
+      { id: MAP_BACK_ID, label: "Back", keepsMenuOpen: true },
+    ],
+    activeId: current ?? SILENT_SLOT_ID,
   };
 }

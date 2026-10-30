@@ -12,7 +12,8 @@
  * in screen coordinates — see `landmarkToCanvas`.
  */
 import { CONTROL } from "../config/constants";
-import type { CanvasPoint, RadialSlot } from "../types";
+import type { CanvasPoint, HandShape, RadialSlot } from "../types";
+import { drawHandGlyph } from "./hand-glyph";
 
 /** One thing the menu can choose. */
 export interface MenuOption {
@@ -26,6 +27,14 @@ export interface MenuOption {
    * so switching has to re-render the ring rather than close it.
    */
   readonly keepsMenuOpen?: boolean;
+  /**
+   * A hand to draw beside the label, for entries that *are* a hand shape.
+   *
+   * A pose described in words has to be held in working memory and compared to
+   * the hand; a picture is checked against the hand directly. Only list rows draw
+   * it, because a ring's slots have no room for anything but a short label.
+   */
+  readonly glyph?: { readonly pose: HandShape; readonly mirror?: boolean };
 }
 
 /** Everything one frame of one cluster needs to draw itself. */
@@ -553,7 +562,26 @@ function drawListCluster(
     }
 
     ctx.fillStyle = style.accent;
-    ctx.fillText(item ? labelFor(item, style) : row.label, width / 2, state.y);
+
+    if (item?.glyph) {
+      // The glyph takes the left of the row and the label follows it, so a column
+      // of poses reads as a column of pictures with their names beside them.
+      drawHandGlyph(ctx, {
+        x: left + 40,
+        y: state.y,
+        size: 46,
+        pose: item.glyph.pose,
+        mirror: item.glyph.mirror ?? false,
+        colour: style.accent,
+        alpha: state.alpha * fade,
+      });
+
+      ctx.textAlign = "left";
+      ctx.fillText(item ? labelFor(item, style) : row.label, left + 76, state.y);
+      ctx.textAlign = "center";
+    } else {
+      ctx.fillText(item ? labelFor(item, style) : row.label, width / 2, state.y);
+    }
 
     ctx.globalAlpha = fade;
   });

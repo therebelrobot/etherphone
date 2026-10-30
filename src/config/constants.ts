@@ -249,6 +249,15 @@ export const BARS_STORAGE_KEY = "etherphone.bars";
 export const CUSTOM_MAP_STORAGE_KEY = "etherphone.custom-map";
 
 /**
+ * Where the expression hand's pose map is remembered.
+ *
+ * One map rather than one per hand, because it answers a question about the
+ * *role* — which kind of chord — and the Chords-hand setting is what decides
+ * which hand is holding it.
+ */
+export const EXPRESSION_MAP_STORAGE_KEY = "etherphone.expression-map";
+
+/**
  * Which hand plays the chord vocabulary.
  *
  * Persisted separately from the maps themselves, so swapping hands is a

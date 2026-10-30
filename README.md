@@ -285,7 +285,12 @@ src/
                            voice's pitch ladder — plus the control vocabulary.
     radial-menu.ts         The gesture menu: the ring's geometry and the list's,
                            hit-testing for both, and the fan-out drawing.
+    menu-clusters.ts       What the vocabulary menu and the map editor hold, as pure
+                           functions over the saved maps, so their contents are testable
+                           without a camera.
     menu-controller.ts     When the menu opens, what it highlights, and what commits.
+    hand-glyph.ts          A hand drawn from a pose, for the editor: the geometry is a
+                           pure function, so what can be asserted is the shape.
     help-modal.ts          The "how to play" modal, filtered to the mode in play.
     start-overlay.ts       The click-to-enable-audio gate.
 ```
@@ -382,11 +387,19 @@ three chords they want, or reach them with shapes their hands actually make.
 
 The whole RFC is in, including the two halves that waited longest on it:
 
-- **The editor, by gesture.** Vocabulary → _Edit map…_ → a shape → what it does.
-  Two steps, the same shape as the Layers drill-down, because a hand coarse enough to
-  pick a direction cannot pick a cell in a grid. The readout names the step — _Edit map_,
-  then the shape in hand — because the left ring holds no menu in force while you are
-  inside the editor, so the readout is the only thing that can say where you are.
+- **The editor, by gesture.** Vocabulary → _Edit map…_ → **which hand** → a shape → what
+  it does. Three steps at most, the same shape as the Layers drill-down, because a hand
+  coarse enough to pick a direction cannot pick a cell in a grid. The first step names
+  each map by the hand holding it — _Left hand — which chord_, _Right hand — what kind_ —
+  and **draws** the two hands, because two rows of text differing by one word are read
+  twice and two hands are told apart at a glance. The readout names every step, because
+  a three-step drill-down that only names the first leaves a player unable to tell the
+  shape list from the kind list: they are both lists of eight things.
+
+  The kind editor lists each pose as a picture beside its name — _2 fingers + thumb →
+  Sus 2_ — for the same reason. Eight poses described in words have to be held in working
+  memory and compared to the hand; a drawing is checked against the hand directly.
+
 - **Custom maps are shareable.** Seven slots encode as seven characters — `0` for
   nothing, `1`–`7` for I–VII, `a`–`g` for i–vii, `m` for the modifier — and that one
   string is both the storage format and the `#map=1450000` URL. There is no account
