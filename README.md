@@ -269,6 +269,18 @@ src/
       sampler-voice.ts     One recording pitched across the keyboard.
       index.ts             Registers the built-in instruments, in picker order.
 
+  hand/                    The hand engine: a pose in, an animated outline of a hand out.
+    pose.ts                What a hand is doing: per-digit curl, facing, spread, roll —
+                           as words for a caller and as numbers for the engine.
+    skeleton.ts            Forward kinematics over an adult hand's proportions, in
+                           view space, plus the same 21 landmarks MediaPipe reports.
+    figure.ts              The posed hand as outlines in drawing order, with the
+                           creases, nails and knuckles on the surfaces they belong to.
+    render.ts              Hidden-line drawing onto a canvas: outlines only, over
+                           whatever is behind.
+    animator.ts            Springs from one pose to the next, a little out of step
+                           per finger, so a hand closes like a hand.
+
   visuals/
     energy.ts              The jittering "energy ribbon" behind the chord readout.
     loop-tracks.ts         The loop's layers as lanes along the bar, with a playhead:
@@ -289,8 +301,8 @@ src/
                            functions over the saved maps, so their contents are testable
                            without a camera.
     menu-controller.ts     When the menu opens, what it highlights, and what commits.
-    hand-glyph.ts          A hand drawn from a pose, for the editor: the geometry is a
-                           pure function, so what can be asserted is the shape.
+    mapping-diagram.ts     The editor's two hands, drawn large and moved from pose to
+                           pose, as the mirrored camera shows the player's own.
     help-modal.ts          The "how to play" modal, filtered to the mode in play.
     start-overlay.ts       The click-to-enable-audio gate.
 ```

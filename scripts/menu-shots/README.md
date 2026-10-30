@@ -6,7 +6,7 @@ The menu is the one part of the instrument a browser cannot screenshot by openin
 the app: it is driven by hands, and a hand is the one thing a headless browser does
 not have. So this harness plays the part `app.ts` plays — it supplies the clusters
 and the cursor — and draws with the **real** code: `MenuController`,
-`drawMenuBackdrop`, `drawCluster`, `drawMappingDiagram` and every cluster builder
+`drawMenuBackdrop`, `drawCluster`, `MappingDiagram` and every cluster builder
 are the ones the instrument ships. Nothing here is a mockup.
 
 The state is reached the way a player reaches it: the controller is opened with a

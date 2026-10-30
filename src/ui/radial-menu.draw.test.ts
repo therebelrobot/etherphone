@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { drawHandGlyph } from "./hand-glyph";
 import { OPTIONS_STYLE } from "./radial-menu";
 import { drawCluster } from "./radial-menu";
 import type { ClusterFrame, MenuOption } from "./radial-menu";
 import { layoutList } from "./radial-menu";
-import { poseShape } from "../music/expression-map";
 
 /**
  * A canvas that records what was asked of it.
@@ -104,34 +102,5 @@ describe("a list beside a ring", () => {
     const [left, , width] = args.roundRect[0];
 
     expect((left as number) + (width as number) / 2).toBeCloseTo(WIDTH / 2, 6);
-  });
-});
-
-describe("drawHandGlyph", () => {
-  it("strokes every finger wide enough to be seen", () => {
-    // The bug this pins: the finger width is in glyph units and the context is
-    // already scaled by the size, so dividing by the size again drew fingers a
-    // tenth of a pixel wide. The palm outline still drew, so the rows carried a
-    // faint box where a hand should have been — and a test that only counted
-    // path commands was perfectly happy with invisible ink.
-    const { ctx, writes } = recordingContext();
-
-    drawHandGlyph(ctx, {
-      x: 100,
-      y: 100,
-      size: 46,
-      pose: poseShape({ index: true }),
-      colour: "#fff",
-    });
-
-    const widths = writes.lineWidth.map(Number);
-
-    expect(widths.length).toBeGreaterThan(0);
-
-    for (const width of widths) {
-      // Every stroke is in glyph units, so scaled by the size it must clear a
-      // pixel. Below that it is not thin, it is absent.
-      expect(width * 46).toBeGreaterThanOrEqual(1);
-    }
   });
 });

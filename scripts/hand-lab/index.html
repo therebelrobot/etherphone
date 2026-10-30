@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Etherphone — hand lab</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font:
+          13px/1.4 ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #0d0d10;
+        color: #e7e9ee;
+      }
+
+      canvas {
+        display: block;
+      }
+
+      #controls {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        width: 260px;
+        padding: 12px;
+        background: #1b1e26e6;
+        border: 1px solid #2a2f3a;
+        border-radius: 8px;
+        display: grid;
+        gap: 8px;
+      }
+
+      #controls[hidden] {
+        display: none;
+      }
+
+      #controls label {
+        display: grid;
+        grid-template-columns: 64px 1fr 36px;
+        align-items: center;
+        gap: 6px;
+      }
+
+      #controls output {
+        font-variant-numeric: tabular-nums;
+        color: #98a2b3;
+      }
+
+      #controls .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      #controls button,
+      #controls select {
+        background: #2a2f3a;
+        color: inherit;
+        border: 1px solid #3a4150;
+        border-radius: 6px;
+        padding: 4px 8px;
+        font: inherit;
+      }
+
+      #controls code {
+        font-size: 11px;
+        color: #98a2b3;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="lab"></canvas>
+    <div id="controls" hidden></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

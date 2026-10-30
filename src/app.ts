@@ -79,7 +79,8 @@ import { canRequestMicrophone, startMicrophone } from "./audio/microphone";
 import { recordVoiceLoop as captureVoiceBuffer } from "./audio/voice-capture";
 import { isSilentCapture, loopFrameCount } from "./audio/voice-loop";
 import { getQuality, getQualityLabel, getQualityNotes } from "./music/qualities";
-import { diagramSizeFor, drawMappingDiagram } from "./ui/mapping-diagram";
+import { sideOf } from "./hand";
+import { MappingDiagram, diagramSizeFor } from "./ui/mapping-diagram";
 import type { DiagramHand } from "./ui/mapping-diagram";
 import {
   decodeExpressionMap,
@@ -202,7 +203,7 @@ function notesFor(state: ChordState, tonicFrequency: number): number[] {
 const REARTICULATE_ID = "rearticulate";
 
 /**
- * How tall a diagram hand is drawn.
+ * How long a diagram hand is drawn, wrist to fingertip.
  *
  * Large enough to hold a real hand up against, which is the only reason to draw
  * one at all — at row size it is a smudge beside a label.
@@ -314,6 +315,9 @@ export class GestureSynthApp {
   private readonly looper: Looper;
 
   private readonly stabilizer = new ChordStabilizer();
+
+  /** Kept between frames, so the editor's hands move from pose to pose. */
+  private readonly mappingDiagram = new MappingDiagram();
   private readonly mono = new MonoReader();
   private readonly hud: Hud;
   private readonly guide: GestureGuide;
@@ -2294,14 +2298,14 @@ export class GestureSynthApp {
 
     const chord: DiagramHand = {
       pose: this.chordDiagramPose(hovered),
-      mirror: chordHand === "Right",
+      hand: sideOf(chordHand),
       caption: this.chordDiagramCaption(hovered),
       rest: this.mapTarget !== "chords",
     };
 
     const kinds: DiagramHand = {
       pose: this.kindDiagramPose(hovered),
-      mirror: kindHand === "Right",
+      hand: sideOf(kindHand),
       caption: this.kindDiagramCaption(hovered),
       rest: this.mapTarget !== "kinds",
     };
@@ -2321,13 +2325,17 @@ export class GestureSynthApp {
     const band = Math.max(0, bandEnd - bandStart);
     const size = Math.max(MAPPING_MIN_SIZE, Math.min(MAPPING_DIAGRAM_SIZE, diagramSizeFor(band)));
 
-    drawMappingDiagram(this.els.ctx, {
-      x: bandStart + band / 2,
-      y: this.els.canvas.height * 0.5,
-      size,
-      hands: [chord, kinds],
-      colour: "#e8a13d",
-    });
+    this.mappingDiagram.draw(
+      this.els.ctx,
+      {
+        x: bandStart + band / 2,
+        y: this.els.canvas.height * 0.5,
+        size,
+        hands: [chord, kinds],
+        colour: "#e8a13d",
+      },
+      performance.now(),
+    );
   }
 
   /** The shape the chord hand is shown making: the hovered shape, or at rest. */

@@ -38,7 +38,7 @@ import {
   poseOptionId,
   vocabularyCluster,
 } from "../../src/ui/menu-clusters";
-import { diagramSizeFor, drawMappingDiagram } from "../../src/ui/mapping-diagram";
+import { MappingDiagram, diagramSizeFor } from "../../src/ui/mapping-diagram";
 import {
   MENUS_STYLE,
   OPTIONS_STYLE,
@@ -93,14 +93,14 @@ const hands = (subject: DiagramHand, other: DiagramHand): readonly DiagramHand[]
 
 const chordHand: DiagramHand = {
   pose: OPEN_HAND,
-  mirror: false,
+  hand: "left",
   caption: "which chord",
   rest: true,
 };
 
 const kindHand = (pose: HandShape, caption: string): DiagramHand => ({
   pose,
-  mirror: true,
+  hand: "right",
   caption,
 });
 
@@ -116,8 +116,8 @@ const STEPS: Record<string, Step> = {
     cluster: () => mapTargetCluster("Left"),
     hover: MAP_TARGET_KINDS_ID,
     diagram: () => [
-      { pose: OPEN_HAND, mirror: false, caption: "which chord", rest: true },
-      { pose: OPEN_HAND, mirror: true, caption: "what kind" },
+      { pose: OPEN_HAND, hand: "left", caption: "which chord", rest: true },
+      { pose: OPEN_HAND, hand: "right", caption: "what kind" },
     ],
   },
   // The diagram following the cursor from pose to pose.
@@ -151,7 +151,7 @@ const STEPS: Record<string, Step> = {
       return hands(
         {
           pose: slot?.shape ?? OPEN_HAND,
-          mirror: false,
+          hand: "left",
           caption: slot
             ? `${slot.label} → ${describeSlotTarget(slot.read(slotsFromMap(GESTURE_MAPS[0])))}`
             : "which chord",
@@ -213,13 +213,18 @@ function render(step: Step, canvas: HTMLCanvasElement): void {
   const band = Math.max(0, bandEnd - bandStart);
   const hands = step.diagram(update.options.hoveredId);
 
-  drawMappingDiagram(ctx, {
-    x: bandStart + band / 2,
-    y: HEIGHT * 0.5,
-    size: Math.max(110, Math.min(200, diagramSizeFor(band, hands.length))),
-    hands,
-    colour: "#e8a13d",
-  });
+  // A fresh diagram, so its hands start in the pose rather than moving to it.
+  new MappingDiagram().draw(
+    ctx,
+    {
+      x: bandStart + band / 2,
+      y: HEIGHT * 0.5,
+      size: Math.max(110, Math.min(200, diagramSizeFor(band, hands.length))),
+      hands,
+      colour: "#e8a13d",
+    },
+    0,
+  );
   drawCluster(ctx, update.menus, MENUS_STYLE);
   // Told where the ring is, exactly as the app tells it, so the shot shows what
   // the instrument shows rather than what the harness would prefer.
