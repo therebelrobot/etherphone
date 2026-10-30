@@ -10,6 +10,12 @@ import { AUDIO } from "../../config/constants";
 import { frequenciesKey } from "../voice";
 import type { Voice } from "../voice";
 
+/** A sounding note: its oscillator, and the gain that fades it in and out. */
+interface BankNote {
+  readonly oscillator: OscillatorNode;
+  readonly envelope: GainNode;
+}
+
 /** How a bank builds its oscillators. */
 export interface OscillatorBankOptions {
   /** Runs once, when the context arrives, before any oscillator is built. */
@@ -21,7 +27,7 @@ export interface OscillatorBankOptions {
 export class OscillatorBank implements Voice {
   private ctx: AudioContext | null = null;
   private destination: AudioNode | null = null;
-  private oscillators: OscillatorNode[] = [];
+  private notes: BankNote[] = [];
 
   /** Frequency key of the currently sounding notes, for the change check. */
   private currentKey: string | null = null;
@@ -51,19 +57,9 @@ export class OscillatorBank implements Voice {
     const key = frequenciesKey(freqs);
     if (key === this.currentKey) return true;
 
-    this.silence();
-
-    this.oscillators = freqs.map((freq) => {
-      const oscillator = this.ctx!.createOscillator();
-      this.options.configure(oscillator);
-      oscillator.frequency.value = freq;
-      oscillator.connect(this.destination!);
-      // New notes join the vibrato that is already running, so a chord held
-      // through a chord change does not change character mid-note.
-      this.vibratoDepth?.connect(oscillator.detune);
-      oscillator.start();
-      return oscillator;
-    });
+    const now = this.ctx.currentTime;
+    this.fadeOut(this.notes, now);
+    this.notes = freqs.map((freq) => this.startNote(freq, now));
 
     this.currentKey = key;
     return true;
@@ -72,10 +68,10 @@ export class OscillatorBank implements Voice {
   /**
    * Replaces the sounding notes at exactly `when`.
    *
-   * The old oscillators are *stopped* at `when` rather than silenced now, and
-   * the new ones start there, so the handover happens on a sample rather than
-   * wherever the frame landed. A time in the past means "as soon as possible",
-   * which is what a late frame gets.
+   * The old notes fade from `when` rather than now, and the new ones swell in
+   * there, so the handover happens on a sample rather than wherever the frame
+   * landed. A time in the past means "as soon as possible", which is what a late
+   * frame gets.
    */
   playAt(freqs: number[], when: number): boolean {
     if (!this.ctx || !this.destination || freqs.length === 0) return false;
@@ -84,36 +80,64 @@ export class OscillatorBank implements Voice {
     if (key === this.currentKey) return true;
 
     const at = Math.max(when, this.ctx.currentTime);
-    const previous = this.oscillators;
-
-    this.oscillators = freqs.map((freq) => {
-      const oscillator = this.ctx!.createOscillator();
-      this.options.configure(oscillator);
-      oscillator.frequency.value = freq;
-      oscillator.connect(this.destination!);
-      this.vibratoDepth?.connect(oscillator.detune);
-      oscillator.start(at);
-      return oscillator;
-    });
-
-    for (const oscillator of previous) {
-      try {
-        oscillator.stop(at);
-        oscillator.onended = () => oscillator.disconnect();
-      } catch {
-        /* already stopped */
-      }
-    }
+    this.fadeOut(this.notes, at);
+    this.notes = freqs.map((freq) => this.startNote(freq, at));
 
     this.currentKey = key;
     return true;
   }
 
   /**
+   * Starts one sustained note at `at`, rising from silence.
+   *
+   * From silence, not at full level: an oscillator switched on at full level is a
+   * step into the middle of a wave, and the step is a click.
+   */
+  private startNote(freq: number, at: number): BankNote {
+    const ctx = this.ctx!;
+    const oscillator = ctx.createOscillator();
+    const envelope = ctx.createGain();
+
+    this.options.configure(oscillator);
+    oscillator.frequency.value = freq;
+
+    envelope.gain.setValueAtTime(0, at);
+    envelope.gain.linearRampToValueAtTime(1, at + AUDIO.oscillatorAttackSeconds);
+
+    oscillator.connect(envelope).connect(this.destination!);
+    // New notes join the vibrato that is already running, so a chord held
+    // through a chord change does not change character mid-note.
+    this.vibratoDepth?.connect(oscillator.detune);
+    oscillator.start(at);
+
+    return { oscillator, envelope };
+  }
+
+  /** Fades notes out from `at` and retires them once they are silent. */
+  private fadeOut(notes: readonly BankNote[], at: number): void {
+    for (const { oscillator, envelope } of notes) {
+      envelope.gain.cancelScheduledValues(at);
+      // A time constant rather than a ramp to a value, because what the gain is
+      // at `at` — mid-swell, perhaps — is not known here, and this starts from it.
+      envelope.gain.setTargetAtTime(0, at, AUDIO.oscillatorReleaseSeconds / 4);
+
+      try {
+        oscillator.stop(at + AUDIO.oscillatorReleaseSeconds);
+        oscillator.onended = () => {
+          oscillator.disconnect();
+          envelope.disconnect();
+        };
+      } catch {
+        /* already stopped */
+      }
+    }
+  }
+
+  /**
    * Strikes each note through its own decaying envelope.
    *
    * The plucked oscillators are deliberately **not** tracked in
-   * {@link oscillators}: they stop themselves, and a second pluck must be able
+   * {@link notes}: they stop themselves, and a second pluck must be able
    * to overlap the first, which is the whole difference between a harp and a
    * series of staccato notes. Only the sustained bank is silenced, so switching
    * to a pluck still stops a held chord from ringing underneath it.
@@ -169,14 +193,14 @@ export class OscillatorBank implements Voice {
    * of per-frame frequencies into a glide rather than a stutter.
    */
   retune(freqs: number[]): boolean {
-    if (!this.ctx || freqs.length !== this.oscillators.length || freqs.length === 0) {
+    if (!this.ctx || freqs.length !== this.notes.length || freqs.length === 0) {
       return this.play(freqs);
     }
 
     const now = this.ctx.currentTime;
 
     freqs.forEach((freq, index) => {
-      this.oscillators[index].frequency.setTargetAtTime(freq, now, AUDIO.glideSeconds);
+      this.notes[index].oscillator.frequency.setTargetAtTime(freq, now, AUDIO.glideSeconds);
     });
 
     this.currentKey = frequenciesKey(freqs);
@@ -221,7 +245,7 @@ export class OscillatorBank implements Voice {
     depth.gain.value = 0;
 
     lfo.connect(depth);
-    for (const oscillator of this.oscillators) depth.connect(oscillator.detune);
+    for (const { oscillator } of this.notes) depth.connect(oscillator.detune);
     lfo.start();
 
     this.vibratoLfo = lfo;
@@ -246,17 +270,9 @@ export class OscillatorBank implements Voice {
     this.vibratoDepth = null;
   }
 
-  /** Stops and drops every oscillator without touching the context. */
+  /** Fades out and drops every sustained note, without touching the context. */
   private silence(): void {
-    for (const oscillator of this.oscillators) {
-      try {
-        oscillator.stop();
-        oscillator.disconnect();
-      } catch {
-        /* already stopped */
-      }
-    }
-
-    this.oscillators = [];
+    if (this.ctx) this.fadeOut(this.notes, this.ctx.currentTime);
+    this.notes = [];
   }
 }

@@ -11,6 +11,7 @@
  * the transport keeps — the picture and the timing cannot disagree.
  */
 import { SCALE_COLORS } from "../config/music";
+import type { Looper } from "../music/looper";
 import type { ChordNumeral, InstrumentMode, TakeEvent } from "../types";
 
 /** A stretch of the loop that one event holds, in beats. */
@@ -41,6 +42,11 @@ export interface LoopTracksFrame {
   readonly isPlaying: boolean;
   readonly canvasWidth: number;
   readonly canvasHeight: number;
+  /**
+   * How far above the canvas's bottom edge the panel sits. The instrument leaves
+   * room for its energy ribbon; a canvas without one can bring the lanes down.
+   */
+  readonly bottomOffset?: number;
 }
 
 const GOLD = "#e8a13d";
@@ -119,6 +125,33 @@ export function trackSegments(
   return segments;
 }
 
+/**
+ * Every layer of a looper, as the lanes view needs them.
+ *
+ * Shared by the instrument and the start screen's demonstration, so a demo's
+ * lanes are the instrument's lanes and not a drawing of them.
+ */
+export function looperLanes(looper: Looper, loopBeats: number, ctxTime: number): TrackLane[] {
+  return looper.tracks.map((track) => {
+    const isRecording = looper.recordingId === track.id;
+
+    return {
+      label: track.label,
+      mode: track.mode,
+      // A lane being recorded is drawn only as far as the playhead, so its notes
+      // arrive as they are played rather than all at once at the end.
+      segments: trackSegments(
+        looper.eventsFor(track.id),
+        loopBeats,
+        isRecording ? looper.positionBeats(ctxTime) : loopBeats,
+      ),
+      isRecording,
+      isEmpty: track.take === null,
+      muted: track.muted,
+    };
+  });
+}
+
 /** A rounded rectangle, without depending on `ctx.roundRect` support. */
 function roundedRect(
   ctx: CanvasRenderingContext2D,
@@ -164,7 +197,7 @@ export function drawLoopTracks(ctx: CanvasRenderingContext2D, frame: LoopTracksF
     PANEL_PADDING * 2 + frame.lanes.length * LANE_HEIGHT + (frame.lanes.length - 1) * LANE_GAP;
 
   const panelX = (frame.canvasWidth - panelWidth) / 2;
-  const panelY = frame.canvasHeight - BOTTOM_OFFSET - panelHeight;
+  const panelY = frame.canvasHeight - (frame.bottomOffset ?? BOTTOM_OFFSET) - panelHeight;
 
   const timelineX = panelX + PANEL_PADDING + LABEL_WIDTH;
   const timelineWidth = panelWidth - PANEL_PADDING * 2 - LABEL_WIDTH;

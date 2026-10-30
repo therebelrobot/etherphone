@@ -6,6 +6,7 @@ import {
   degreePositionAtHeight,
   frequencyAtPosition,
   frequencyForDegree,
+  heightForDegree,
   monoNoteLabel,
   monoNumeral,
   pluckDecayFor,
@@ -56,6 +57,18 @@ describe("frequencyForDegree", () => {
         `degree ${degree} -> ${degree + 1}`,
       ).toBeGreaterThan(frequencyForDegree(degree, C4));
     }
+  });
+});
+
+describe("heightForDegree", () => {
+  it("is the height that reads back as the degree, across the whole band", () => {
+    for (let degree = 1; degree <= 1 + PITCH_SPAN_DEGREES; degree += 1) {
+      expect(degreePositionAtHeight(heightForDegree(degree))).toBeCloseTo(degree, 9);
+    }
+  });
+
+  it("puts a higher note higher in the frame, which is smaller y", () => {
+    expect(heightForDegree(9)).toBeLessThan(heightForDegree(8));
   });
 });
 

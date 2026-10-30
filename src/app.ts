@@ -101,6 +101,7 @@ import type {
   HandShape,
   InstrumentMode,
   KeyName,
+  MonoReading,
   MonoStyle,
 } from "./types";
 import { getAppElements, resizeCanvasToWindow } from "./ui/dom";
@@ -136,6 +137,10 @@ import {
 } from "./ui/radial-menu";
 import type { MenuLayout, MenuOption } from "./ui/radial-menu";
 import { downloadBlob } from "./ui/download";
+import { LoopDemo } from "./demo/loop-demo";
+import { DemoReel } from "./demo/reel";
+import type { DemoSound } from "./demo/sound";
+import { StartDemo } from "./demo/start-demo";
 import { StartOverlay } from "./ui/start-overlay";
 import { VolumeMeter } from "./ui/volume-meter";
 import { ArticulationGesture } from "./vision/articulation-gesture";
@@ -158,7 +163,7 @@ import { drawFrame, landmarkToCanvas } from "./vision/overlay";
 import { TransportGesture } from "./vision/transport-gesture";
 import type { TransportCommand } from "./vision/transport-gesture";
 import { drawEnergy } from "./visuals/energy";
-import { drawLoopTracks, trackSegments } from "./visuals/loop-tracks";
+import { drawLoopTracks, looperLanes } from "./visuals/loop-tracks";
 import type { TrackLane } from "./visuals/loop-tracks";
 import { drawTransportCue, drawTransportFlash } from "./visuals/transport-cue";
 import type { TransportCueFrame } from "./visuals/transport-cue";
@@ -197,6 +202,34 @@ function notesFor(state: ChordState, tonicFrequency: number): number[] {
     state.quality,
     state.isMajorMode,
   );
+}
+
+/**
+ * Sounds one loop event on a layer's engine.
+ *
+ * A function of its own, outside the app, because two things play loops: the
+ * instrument's looper, and the start screen's demonstration of it. They must play
+ * an event the same way or the demo would not sound like the instrument.
+ */
+function playLoopEventOn(
+  layer: SynthEngine,
+  resolved: ResolvedEvent,
+  gain: number,
+  when?: number,
+): void {
+  if (resolved.notes.length === 0) {
+    layer.setVolume(0);
+    return;
+  }
+
+  if (when === undefined) {
+    layer.playNotes(resolved.notes);
+  } else {
+    layer.playNotesAt(resolved.notes, when);
+  }
+
+  layer.updateFilterSweep(resolved.tilt);
+  layer.setVolume(resolved.volume * gain);
 }
 
 /** The id of the entry that turns re-articulation on or off. */
@@ -351,6 +384,16 @@ export class GestureSynthApp {
     handednesses: [],
   };
 
+  /** Whether the player has dismissed the start screen; the hands are read only after. */
+  private hasStarted = false;
+
+  /** Whether the start screen's demonstration is being played out loud. */
+  private demoListening = false;
+
+  /** The demonstrations' own mono reader and loop layers, apart from the player's. */
+  private readonly demoMono = new MonoReader();
+  private readonly demoLayers = new Map<string, SynthEngine>();
+
   private tonicFrequency: number;
   private keyName: KeyName;
 
@@ -502,9 +545,123 @@ export class GestureSynthApp {
 
   /** Constructs the components that own their own event handling. */
   private wireOverlays(): void {
-    this.startOverlay = new StartOverlay(this.els.startOverlay, this.els.canvas, () =>
-      this.startAudio(),
+    // The demonstrations play in the player's own key and with their own chord
+    // hand, so what they show is what the player will play.
+    const sound = this.demoSound();
+    const shared = { key: this.keyName, chordHand: this.harmonyHand, sound };
+    const reel = new DemoReel(
+      [
+        {
+          demo: new StartDemo(this.els.startDemo, shared),
+          tab: this.els.demoTabChords,
+          description:
+            "Two drawn hands playing Soon May the Wellerman Come: one hand chooses each chord, the other chooses what kind",
+        },
+        {
+          demo: new LoopDemo(this.els.startDemo, shared),
+          tab: this.els.demoTabLoops,
+          description:
+            "Two drawn hands recording a loop of Drunken Sailor: a fist flicked up records the chords, the menu switches to Mono, and the tune is recorded as a second layer over them",
+        },
+      ],
+      this.els.startDemo,
+      () => sound.silence(),
     );
+
+    this.startOverlay = new StartOverlay(
+      this.els.startOverlay,
+      this.els.canvas,
+      () => {
+        this.hasStarted = true;
+        this.startAudio();
+      },
+      reel,
+      {
+        button: this.els.demoListen,
+        onToggle: (listening) => {
+          this.demoListening = listening;
+
+          if (listening) {
+            // The listen button's click is the gesture the browser wants, so the
+            // audio graph can open here rather than waiting for the start click.
+            this.startAudio();
+            reel.restart();
+          } else {
+            sound.silence();
+          }
+        },
+      },
+    );
+  }
+
+  /**
+   * Where the start screen's demonstrations are heard, when the player listens.
+   *
+   * Every call here is one the live loop makes for a player's hands — the same
+   * engine, the picker's instrument, the same order — with the demo's hands
+   * standing in for theirs. That is what makes a demo sound like copying it. Its
+   * loop layers and its mono reader are its own, so a demo leaves nothing behind
+   * in the player's session.
+   */
+  private demoSound(): DemoSound {
+    return {
+      live: (play, expression) => {
+        if (!this.demoListening) return;
+
+        this.synth.updateFilterSweep(0);
+
+        if (play.kind === "chord") {
+          this.synth.setVibrato(0, AUDIO.vibratoRateHz);
+          this.updateVoices(play.state, expression.volume);
+          return;
+        }
+
+        this.synth.setVibrato(
+          expression.fingers * AUDIO.vibratoCentsPerFinger,
+          AUDIO.vibratoRateHz,
+        );
+
+        const reading = this.demoMono.update(play.height, this.monoStyle, this.tonicFrequency, {
+          octaveDown: expression.octaveDown,
+          snapStrength: this.snapStrength,
+        });
+
+        if (!reading) {
+          this.synth.stop();
+          return;
+        }
+
+        this.playMonoReading(reading);
+        this.synth.setVolume(expression.volume);
+      },
+      loop: (trackId, event, gain) => {
+        if (!this.demoListening) return;
+        playLoopEventOn(
+          this.demoLayer(trackId),
+          resolveTakeEvent(event, this.tonicFrequency),
+          gain,
+        );
+      },
+      silence: () => {
+        this.synth.stop();
+        this.demoMono.reset();
+        for (const layer of this.demoLayers.values()) layer.stop();
+      },
+    };
+  }
+
+  /** A demo loop's channel strip, built the way the instrument builds its own. */
+  private demoLayer(trackId: string): SynthEngine {
+    const existing = this.demoLayers.get(trackId);
+    if (existing) return existing;
+
+    const layer = new SynthEngine();
+    layer.ensureContext(this.synth.context ?? undefined);
+    layer.setInstrument(this.els.instrumentSelect.value);
+    layer.setVolume(0);
+    this.demoLayers.set(trackId, layer);
+
+    return layer;
   }
 
   /**
@@ -1459,6 +1616,22 @@ export class GestureSynthApp {
     const tick = (): void => {
       const now = performance.now();
 
+      // Until the player starts, the camera is shown but not read. The start
+      // screen is playing its demonstration, and a real hand moving the
+      // instrument underneath it — dots on the fingers, a menu opening on a fist —
+      // would muddy what it shows.
+      if (!this.hasStarted) {
+        drawFrame(
+          this.els.ctx,
+          this.els.video,
+          this.lastResults,
+          this.els.canvas.width,
+          this.els.canvas.height,
+        );
+        requestAnimationFrame(tick);
+        return;
+      }
+
       // Inference only when the video has actually advanced, but the frame is
       // drawn **every** frame: drawing only on new video leaves the overlays to
       // pile up on top of one another between clears, which smears everything
@@ -1652,43 +1825,37 @@ export class GestureSynthApp {
 
   /** The tracks, as the loop view needs them. */
   private layerLanes(ctxTime: number): TrackLane[] {
-    return this.looper.tracks.map((track) => {
-      const isRecording = this.looper.recordingId === track.id;
-
-      return {
-        label: track.label,
-        mode: track.mode,
-        // A lane being recorded is drawn only as far as the playhead, so its
-        // notes arrive as they are played rather than all at once at the end.
-        segments: trackSegments(
-          this.looper.eventsFor(track.id),
-          this.transport.loopBeats,
-          isRecording ? this.looper.positionBeats(ctxTime) : this.transport.loopBeats,
-        ),
-        isRecording,
-        isEmpty: track.take === null,
-        muted: track.muted,
-      };
-    });
+    return looperLanes(this.looper, this.transport.loopBeats, ctxTime);
   }
 
   private playLoopEvent(trackId: TrackId, resolved: ResolvedEvent, when?: number): void {
     const layer = this.layerFor(trackId);
     const gain = this.looper.tracks.find((track) => track.id === trackId)?.gain ?? 1;
 
-    if (resolved.notes.length === 0) {
-      layer.setVolume(0);
-      return;
-    }
+    playLoopEventOn(layer, resolved, gain, when);
+  }
 
-    if (when === undefined) {
-      layer.playNotes(resolved.notes);
-    } else {
-      layer.playNotesAt(resolved.notes, when);
-    }
+  /**
+   * Strikes, holds or glides one frame of a mono reading, the way the current
+   * style says — the part of a mono frame that is about sound rather than hands.
+   */
+  private playMonoReading(reading: MonoReading): void {
+    const notes = [reading.frequency];
 
-    layer.updateFilterSweep(resolved.tilt);
-    layer.setVolume(resolved.volume * gain);
+    switch (this.monoStyle) {
+      case "glide":
+        this.synth.glideNotes(notes);
+        break;
+      case "harp":
+      case "staccato":
+        // Pluck on entering a degree and let it *decay*. The decay is the whole
+        // difference between the two plucked styles: long rings into a phrase,
+        // short is a run of separate notes.
+        if (reading.isNewDegree) this.strikeMonoNote(notes);
+        break;
+      default:
+        this.synth.playNotes(notes);
+    }
   }
 
   /**
@@ -1790,20 +1957,7 @@ export class GestureSynthApp {
 
     const notes = [reading.frequency];
 
-    switch (this.monoStyle) {
-      case "glide":
-        this.synth.glideNotes(notes);
-        break;
-      case "harp":
-      case "staccato":
-        // Pluck on entering a degree and let it *decay*. The decay is the whole
-        // difference between the two plucked styles: long rings into a phrase,
-        // short is a run of separate notes.
-        if (reading.isNewDegree) this.strikeMonoNote(notes);
-        break;
-      default:
-        this.synth.playNotes(notes);
-    }
+    this.playMonoReading(reading);
 
     // Re-articulation: the same note struck again, without moving the hand. This
     // is the one thing no style can do on its own, because a repeat is not a
@@ -2333,6 +2487,9 @@ export class GestureSynthApp {
         size,
         hands: [chord, kinds],
         colour: "#e8a13d",
+        // The captions are words and the band is narrow: they are fitted to it
+        // rather than allowed to run into the options.
+        maxWidth: band,
       },
       performance.now(),
     );

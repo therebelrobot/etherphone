@@ -59,6 +59,19 @@ export function degreePositionAtHeight(height: number): number {
 }
 
 /**
+ * The height that plays a degree: the inverse of {@link degreePositionAtHeight}.
+ *
+ * For anything that has to *put* a hand at a note rather than read one — the
+ * start screen's demonstration, which moves a drawn hand to the height a player's
+ * would be at.
+ */
+export function heightForDegree(degree: number): number {
+  const travelled = 1 - (degree - 1) / PITCH_SPAN_DEGREES;
+
+  return MONO_PITCH_TOP_Y + travelled * (MONO_PITCH_BOTTOM_Y - MONO_PITCH_TOP_Y);
+}
+
+/**
  * Pulls a continuous position toward the nearest degree, without making it step.
  *
  * This is snap assistance: a *magnetic* mapping rather than a quantised one. The

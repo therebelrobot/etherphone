@@ -1,9 +1,14 @@
 /**
  * The synth engine.
  *
- * Signal chain: voice -> waveshaper -> lowpass filter -> master gain. The engine
- * owns everything in that chain except the voice itself, plus the `AudioContext`
- * everything is built against.
+ * Signal chain: voice -> chord level -> waveshaper -> lowpass filter -> master
+ * gain -> the context's shared limiter. The engine owns everything in that chain
+ * except the voice itself and the limiter, plus the `AudioContext` everything is
+ * built against.
+ *
+ * The chord level scales each chord by its note count so it cannot clip, and the
+ * limiter is shared by every engine on the context so the live hands and the
+ * loop's layers cannot clip *together* — see `./headroom.ts`.
  *
  * What makes the noise is a separate concern, behind the `Voice` interface (see
  * `./voice.ts`). `playNotes` forwards frequencies to whichever voice is active
@@ -17,6 +22,7 @@
  * refuse to start audio otherwise.
  */
 import { AUDIO, PROJECT_NAME } from "../config/constants";
+import { chordLevel, sharedOutput } from "./headroom";
 import { frequenciesKey, getVoice } from "./voice";
 import type { Voice, VoiceDefinition } from "./voice";
 
@@ -25,6 +31,8 @@ export class SynthEngine {
   private filter: BiquadFilterNode | null = null;
   private waveShaper: WaveShaperNode | null = null;
   private masterGain: GainNode | null = null;
+  /** Scales the voice by its chord's size; see {@link chordLevel}. */
+  private chordBus: GainNode | null = null;
 
   private definition: VoiceDefinition | null = null;
   private voice: Voice | null = null;
@@ -62,9 +70,13 @@ export class SynthEngine {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0;
 
+    this.chordBus = this.ctx.createGain();
+    this.chordBus.gain.value = 1;
+
+    this.chordBus.connect(this.waveShaper);
     this.waveShaper.connect(this.filter);
     this.filter.connect(this.masterGain);
-    this.masterGain.connect(this.ctx.destination);
+    this.masterGain.connect(sharedOutput(this.ctx));
 
     this.buildVoice();
   }
@@ -170,6 +182,7 @@ export class SynthEngine {
 
     if (this.voice.play(freqs)) {
       this.currentKey = key;
+      this.setChordLevel(freqs.length);
     }
   }
 
@@ -190,6 +203,7 @@ export class SynthEngine {
 
     if (settled) {
       this.currentKey = key;
+      this.setChordLevel(freqs.length);
     }
   }
 
@@ -207,7 +221,10 @@ export class SynthEngine {
     if (key === this.currentKey) return;
 
     if (this.voice.playAt) {
-      if (this.voice.playAt(freqs, when)) this.currentKey = key;
+      if (this.voice.playAt(freqs, when)) {
+        this.currentKey = key;
+        this.setChordLevel(freqs.length, when);
+      }
       return;
     }
 
@@ -222,6 +239,8 @@ export class SynthEngine {
    */
   pluckNotes(freqs: number[], decaySeconds?: number): void {
     if (!this.ctx || !this.voice || freqs.length === 0) return;
+
+    this.setChordLevel(freqs.length);
 
     if (this.voice.pluck) {
       this.voice.pluck(freqs, decaySeconds);
@@ -265,6 +284,19 @@ export class SynthEngine {
     this.voice.setVibrato(depthCents, rateHz);
   }
 
+  /**
+   * Sets the chord level for a chord of `noteCount` notes, now or at `when`.
+   *
+   * Set at the moment the notes change, so a chord is never heard at the level of
+   * the one before it: a triad after a single note would otherwise clip for as
+   * long as the ramp took.
+   */
+  private setChordLevel(noteCount: number, when?: number): void {
+    if (!this.ctx || !this.chordBus) return;
+
+    this.chordBus.gain.setValueAtTime(chordLevel(noteCount), when ?? this.ctx.currentTime);
+  }
+
   /** Silences and tears down every voice. */
   stop(): void {
     this.setVolume(0);
@@ -286,6 +318,6 @@ export class SynthEngine {
     if (!this.ctx || !this.waveShaper || !this.definition) return;
 
     this.voice = this.definition.create();
-    this.voice.connect(this.ctx, this.waveShaper);
+    this.voice.connect(this.ctx, this.chordBus ?? this.waveShaper);
   }
 }

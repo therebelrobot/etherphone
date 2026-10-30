@@ -12,6 +12,7 @@ import { BUNDLED_SAMPLES } from "../sampler";
 import { registerVoice } from "../voice";
 import { WAVETABLE_PRESETS } from "../wavetable";
 import { createOscillatorVoice, OSCILLATOR_PRESETS } from "./oscillator-voice";
+import { createPadVoice } from "./pad-voice";
 import { createSamplerVoice } from "./sampler-voice";
 import { createWavetableVoice } from "./wavetable-voice";
 
@@ -27,6 +28,14 @@ function registerBuiltInVoices(): void {
       create: () => createOscillatorVoice(preset.waveform),
     });
   }
+
+  // Last of the synth family: the one that sits back, for chords held a while.
+  registerVoice({
+    id: "synth-pad",
+    label: "Soft Pad",
+    kind: "oscillator",
+    create: createPadVoice,
+  });
 
   for (const preset of WAVETABLE_PRESETS) {
     registerVoice({

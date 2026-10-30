@@ -417,4 +417,29 @@ export const AUDIO = {
   samplerStopPaddingSeconds: 0.02,
   /** Crossfade applied to a looping sample's seam, in milliseconds. */
   samplerLoopFadeMilliseconds: 5,
+
+  /**
+   * A sustained oscillator note's edges, in seconds.
+   *
+   * An oscillator started or stopped at full level steps from nothing to a wave
+   * mid-cycle, and the step is a click — one per note, so every chord change was
+   * four. These are short enough to keep a chord change crisp and long enough to
+   * round the step off.
+   */
+  oscillatorAttackSeconds: 0.012,
+  oscillatorReleaseSeconds: 0.06,
+
+  /**
+   * The pad: two oscillators a few cents apart per note, through a soft lowpass,
+   * swelling in and fading out.
+   *
+   * The detune is what makes a pad a pad — two waves drifting slowly in and out
+   * of phase, which is a chorus rather than a pitch. The swell and fade are time
+   * constants, so a chord change is a crossfade and never a cut.
+   */
+  padDetuneCents: 7,
+  padCutoffHz: 1800,
+  padQ: 0.5,
+  padAttackSeconds: 0.12,
+  padReleaseSeconds: 0.3,
 } as const;

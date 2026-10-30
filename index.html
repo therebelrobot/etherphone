@@ -332,9 +332,21 @@
       </div>
 
       <div id="startOverlay">
+        <div id="demoTabs" role="tablist" aria-label="Demonstrations">
+          <button id="demoTabChords" type="button" role="tab" aria-selected="true">Chords</button>
+          <button id="demoTabLoops" type="button" role="tab" aria-selected="false">
+            Loops &amp; Mono
+          </button>
+        </div>
+        <canvas
+          id="startDemo"
+          role="img"
+          aria-label="Two drawn hands playing Soon May the Wellerman Come: one hand chooses each chord, the other chooses what kind"
+        ></canvas>
+        <button id="demoListen" type="button">🔊 listen to the demo</button>
         <div class="start-circle">▶</div>
         <div class="start-text">
-          click to enable audio
+          click to start playing
           <br />
           <br />
           <small>Etherphone · built on Gesture Synth by Eric Wei</small>

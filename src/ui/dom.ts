@@ -47,6 +47,10 @@ export interface AppElements {
   readonly closeHelp: HTMLButtonElement;
   readonly helpGestureRows: HTMLElement;
   readonly startOverlay: HTMLElement;
+  readonly startDemo: HTMLCanvasElement;
+  readonly demoListen: HTMLButtonElement;
+  readonly demoTabChords: HTMLButtonElement;
+  readonly demoTabLoops: HTMLButtonElement;
 }
 
 import { PROJECT_NAME } from "../config/constants";
@@ -108,6 +112,10 @@ export function getAppElements(): AppElements {
     closeHelp: requireElement<HTMLButtonElement>("#closeHelp"),
     helpGestureRows: requireElement("#helpGestureRows"),
     startOverlay: requireElement("#startOverlay"),
+    startDemo: requireElement<HTMLCanvasElement>("#startDemo"),
+    demoListen: requireElement<HTMLButtonElement>("#demoListen"),
+    demoTabChords: requireElement<HTMLButtonElement>("#demoTabChords"),
+    demoTabLoops: requireElement<HTMLButtonElement>("#demoTabLoops"),
   };
 }
 

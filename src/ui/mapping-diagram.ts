@@ -40,6 +40,14 @@ export interface MappingDiagramOptions {
   readonly hands: readonly DiagramHand[];
   readonly colour: string;
   readonly alpha?: number;
+  /**
+   * The width the captions have to fit inside.
+   *
+   * Given when the diagram shares the screen with something, which is always: the
+   * editor draws it in the band between the ring and the options, and a pose with
+   * a long name ran straight into the options.
+   */
+  readonly maxWidth?: number;
 }
 
 /** How far below a hand's pivot its caption sits, past the wrist. */
@@ -50,6 +58,9 @@ const HAND_GAP = 1.6;
 
 /** The caption's type size, as a fraction of the hand's. */
 const CAPTION_SIZE = 0.14;
+
+/** Below this a caption stops being readable, so it is allowed to overflow instead. */
+const MIN_CAPTION_SIZE = 9;
 
 /** How wide one hand is drawn, thumb out, as a multiple of its length. */
 const HAND_WIDTH = 0.9;
@@ -68,6 +79,31 @@ export function diagramWidth(size: number, handCount = 2): number {
 /** The largest a diagram can be and still fit a given width. */
 export function diagramSizeFor(width: number, handCount = 2): number {
   return width / ((handCount - 1) * HAND_GAP + HAND_WIDTH);
+}
+
+/**
+ * The caption's type size: as large as the hand allows, and never wider than the
+ * space the diagram was given.
+ *
+ * Measured rather than estimated. Captions are words, words are not a constant
+ * width, and the first version sized them from the hand alone — so the pose with
+ * the longest name was drawn straight into the options beside it.
+ */
+function captionSize(
+  ctx: CanvasRenderingContext2D,
+  hands: readonly DiagramHand[],
+  size: number,
+  maxWidth?: number,
+): number {
+  const wanted = size * CAPTION_SIZE;
+  if (!maxWidth) return wanted;
+
+  ctx.font = `${wanted}px monospace`;
+
+  const widest = Math.max(...hands.map((hand) => ctx.measureText(hand.caption).width));
+  if (widest <= maxWidth) return wanted;
+
+  return Math.max(MIN_CAPTION_SIZE, wanted * (maxWidth / widest));
 }
 
 /**
@@ -117,7 +153,7 @@ export class MappingDiagram {
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `${Math.round(size * CAPTION_SIZE)}px monospace`;
+    ctx.font = `${Math.round(captionSize(ctx, hands, size, options.maxWidth))}px monospace`;
     ctx.fillStyle = colour;
 
     hands.forEach((hand, index) => {

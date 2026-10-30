@@ -77,8 +77,13 @@ export function readHandShape(landmarks: Hand, handedness: Handedness): HandShap
  *
  * The shape is looked up in the map rather than reasoned about here, so the
  * gesture language is data a player can choose. When the map lets tilt pick the
- * mode, the numeral's case is overwritten from the hand's roll; when it does
+ * mode, the numeral's case is overwritten from the hand's tilt; when it does
  * not, the case the map stored is the one that plays.
+ *
+ * The tilt is read the way the sound reads it — {@link getHandHorizontalTilt},
+ * inward is major, on either hand. It used to be {@link getChordQuality}, which
+ * goes by screen direction and so has inward and outward swapped on the right
+ * hand: a right chord hand leaning out *sounded* minor and was *named* major.
  */
 export function classifyChord(
   landmarks: Hand,
@@ -90,8 +95,7 @@ export function classifyChord(
 
   if (!map.tiltPicksMode) return numeral;
 
-  const quality = getChordQuality(landmarks);
-  return quality === "major"
+  return getHandHorizontalTilt(landmarks, handedness) >= 0
     ? (numeral.toUpperCase() as ChordNumeral)
     : (numeral.toLowerCase() as ChordNumeral);
 }
@@ -154,9 +158,19 @@ export function getHandHeight(landmarks: Hand): number {
 
 /** Wrist height, mapped onto 0..1 with higher meaning louder. */
 export function getVolumeFromHeight(landmarks: Hand): number {
-  const wrist = landmarks[WRIST];
+  return volumeForHeight(landmarks[WRIST].y);
+}
 
-  const clamped = Math.max(VOLUME_TOP_Y, Math.min(VOLUME_BOTTOM_Y, wrist.y));
+/**
+ * The volume a wrist at height `y` plays at: 0 at the top edge of the frame is
+ * loudest.
+ *
+ * Separate from the landmarks so something that is not a camera hand — the start
+ * screen's demonstration — can ask what a hand at a height would sound like, and
+ * get the instrument's own answer.
+ */
+export function volumeForHeight(y: number): number {
+  const clamped = Math.max(VOLUME_TOP_Y, Math.min(VOLUME_BOTTOM_Y, y));
   const t = (clamped - VOLUME_TOP_Y) / (VOLUME_BOTTOM_Y - VOLUME_TOP_Y);
   return 1 - t;
 }

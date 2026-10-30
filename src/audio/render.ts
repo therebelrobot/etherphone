@@ -13,6 +13,7 @@
  */
 import type { Take } from "../types";
 import { resolveTakeEvent } from "../music/take";
+import { chordLevel, sharedOutput } from "./headroom";
 import { getVoice } from "./voice";
 import { AUDIO, TRANSPORT } from "../config/constants";
 
@@ -145,12 +146,16 @@ export async function renderTakeToWav(options: RenderOptions): Promise<Blob> {
 
   const master = offline.createGain();
   master.gain.value = 1;
-  master.connect(offline.destination);
+  // Through the same limiter, and below, the same chord level, as playback: a
+  // take renders the way it sounded, clipping included if it ever did — which
+  // now it does not.
+  master.connect(sharedOutput(offline));
 
   for (const layer of layers) {
     const definition = getVoice(layer.voiceId);
     if (!definition) continue;
 
+    const chordBus = offline.createGain();
     const gain = offline.createGain();
     const filter = offline.createBiquadFilter();
     filter.type = "lowpass";
@@ -159,8 +164,8 @@ export async function renderTakeToWav(options: RenderOptions): Promise<Blob> {
     const voice = definition.create();
     // The offline context is a `BaseAudioContext` with every node factory the
     // voices use; the cast is for the one member they do not (`resume`).
-    voice.connect(offline as unknown as AudioContext, gain);
-    gain.connect(filter).connect(master);
+    voice.connect(offline as unknown as AudioContext, chordBus);
+    chordBus.connect(gain).connect(filter).connect(master);
 
     const notes = scheduleTake(layer.take, tonicFrequency, secondsPerBeat);
 
@@ -175,6 +180,8 @@ export async function renderTakeToWav(options: RenderOptions): Promise<Blob> {
         voice.release();
         continue;
       }
+
+      chordBus.gain.setValueAtTime(chordLevel(note.notes.length), note.when);
 
       if (voice.playAt) voice.playAt(note.notes, note.when);
       else voice.play(note.notes);

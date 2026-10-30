@@ -28,6 +28,17 @@ const DIGIT_PACE: Readonly<Record<Digit, number>> = {
 /** Turning the hand over is a bigger movement than folding a finger, and slower. */
 const FACING_PACE = 0.7;
 
+/**
+ * Leaning the hand is a small movement of the wrist, and it goes with the fingers.
+ *
+ * Quicker than the fingers, not slower, because the instrument reads both at
+ * once: a hand going from two fingers leaning out to one finger upright that
+ * folds its finger before it straightens is, for a moment, one finger leaning
+ * out — a different chord, and one held long enough to be heard. At this pace the
+ * lean comes upright as the finger folds.
+ */
+const TILT_PACE = 1.7;
+
 /** The longest step taken in one update: a stalled tab must not fling the hand. */
 const MAX_STEP_SECONDS = 0.1;
 
@@ -91,7 +102,7 @@ export class HandAnimator {
     ) as Record<Digit, Spring>;
     this.facing = spring(pose.facing, FACING_PACE);
     this.spread = spring(pose.spread);
-    this.tilt = spring(pose.tilt, FACING_PACE);
+    this.tilt = spring(pose.tilt, TILT_PACE);
     this.roll = spring(pose.roll, FACING_PACE);
     this.pitch = spring(pose.pitch, FACING_PACE);
     this.instant = options.instant ?? false;

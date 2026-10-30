@@ -213,7 +213,7 @@ function render(step: Step, canvas: HTMLCanvasElement): void {
   const band = Math.max(0, bandEnd - bandStart);
   const hands = step.diagram(update.options.hoveredId);
 
-  // A fresh diagram, so its hands start in the pose rather than moving to it.
+  // A fresh diagram, so its hands start in the pose rather than easing to it.
   new MappingDiagram().draw(
     ctx,
     {
@@ -222,6 +222,7 @@ function render(step: Step, canvas: HTMLCanvasElement): void {
       size: Math.max(110, Math.min(200, diagramSizeFor(band, hands.length))),
       hands,
       colour: "#e8a13d",
+      maxWidth: band,
     },
     0,
   );

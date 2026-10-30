@@ -53,6 +53,107 @@ body {
   box-sizing: border-box;
 }
 
+/* The demonstration takes whatever the prompt leaves, above it. */
+#startDemo {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: block;
+}
+
+#demoTabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+#demoTabs button {
+  font-family: monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+#demoTabs button:hover,
+#demoTabs button:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+#demoTabs button[aria-selected="true"] {
+  color: #111;
+  background: #e8a13d;
+}
+
+#demoListen {
+  font-family: monospace;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+#demoListen:hover,
+#demoListen:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+#demoListen[aria-pressed="true"] {
+  border-color: #e8a13d;
+  color: #e8a13d;
+}
+
+#startOverlay.failed #startDemo,
+#startOverlay.failed #demoTabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+#demoTabs button {
+  font-family: monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+#demoTabs button:hover,
+#demoTabs button:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+#demoTabs button[aria-selected="true"] {
+  color: #111;
+  background: #e8a13d;
+}
+
+#demoListen {
+  display: none;
+}
+
 .start-circle {
   width: 72px;
   height: 72px;
